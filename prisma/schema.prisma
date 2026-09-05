@@ -91,12 +91,16 @@ enum InviteStatus {
 
 /// A person on the platform.
 ///
-/// Deliberately free of credentials: passwords, sessions, OAuth accounts and
-/// verification tokens are owned by Phase 3 (Better Auth / Auth.js), which will
-/// add its own tables referencing this one. `isActive` exists so that
-/// deactivation never requires deleting a user — authorship of durable content
-/// is protected by `Restrict` foreign keys, so a hard delete would be blocked
-/// by the database anyway.
+/// Credentials live in `Account`, never here — see the Authentication section
+/// at the end of this file. `isActive` exists so that deactivation never
+/// requires deleting a user: authorship of durable content is protected by
+/// `Restrict` foreign keys, so a hard delete would be blocked by the database
+/// anyway.
+///
+/// Better Auth (Phase 3) reads this model through field mappings rather than
+/// columns of its own — its logical `name` is NEURA's `displayName` and its
+/// `image` is `avatarUrl`. `emailVerified` is the single column Better Auth
+/// required that NEURA did not already have. See docs/authentication.md.
 model User {
   id          String  @id @default(uuid(7)) @db.Uuid
   email       String  @unique @db.Citext
@@ -107,8 +111,15 @@ model User {
   statusText  String? @map("status_text")
   isActive    Boolean @default(true) @map("is_active")
 
+  /// Required by Better Auth. Verification *delivery* is not implemented yet,
+  /// so this stays false until the email phase turns it on.
+  emailVerified Boolean @default(false) @map("email_verified")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions Session[]
+  accounts Account[]
 
   ownedWorkspaces         Workspace[]
   workspaceMemberships    WorkspaceMember[]
@@ -493,4 +504,102 @@ model Attachment {
   // page fetch.
   @@index([messageId])
   @@map("attachments")
+}
+
+// ===========================================================================
+// Authentication (Better Auth)
+// ===========================================================================
+//
+// These three models mirror Better Auth 1.7.x's required schema exactly. Their
+// Prisma field names deliberately match Better Auth's logical field names —
+// the library resolves fields by Prisma model field, so renaming any of them
+// would require a matching `fields` override in lib/auth/auth.ts. Only the
+// database column names are translated to NEURA's snake_case convention.
+//
+// Ids are UUIDv7 like every other NEURA table: Better Auth is configured with
+// `advanced.database.generateId: false`, so it omits `id` on insert and
+// Prisma's `@default(uuid(7))` supplies it.
+
+/// An authentication method belonging to a user.
+///
+/// For email + password there is exactly one row per user with
+/// `providerId = "credential"` and the Argon2 password hash in `password`.
+/// OAuth providers add further rows here without any schema change — that is
+/// the whole reason credentials are a separate table rather than columns on
+/// `User`.
+model Account {
+  id         String @id @default(uuid(7)) @db.Uuid
+  /// Issuer of the account: a local marker for credentials, or the OAuth
+  /// provider's issuer URL.
+  issuer     String
+  /// The user's identifier *at the provider*. For credentials this is the
+  /// NEURA user id.
+  accountId  String @map("account_id")
+  providerId String @map("provider_id")
+  userId     String @map("user_id") @db.Uuid
+
+  /// Argon2id hash written by Better Auth. Never a plaintext password, and
+  /// never returned by the API — Better Auth marks this field `returned: false`.
+  password String?
+
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(3)
+  scope                 String?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Required by Better Auth: one account per identity at a given issuer.
+  @@unique([issuer, accountId])
+  // "Every credential this user owns" — read on sign-in and on account linking.
+  @@index([userId])
+  @@map("accounts")
+}
+
+/// An active login. One row per device, so revoking a single session never
+/// signs the user out everywhere.
+model Session {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  /// Opaque 32-character token; the value held in the session cookie.
+  token     String   @unique
+  userId    String   @map("user_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // "List / revoke this user's sessions", and the FK index that keeps the
+  // cascade cheap when a user is removed.
+  @@index([userId])
+  // Lets expired-session cleanup scan by expiry instead of the whole table.
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Short-lived tokens for email verification and password reset.
+///
+/// Unused in Phase 3 — neither flow delivers email yet — but the table is
+/// required by Better Auth and creating it now means the email phase is a
+/// configuration change rather than a migration.
+model Verification {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  // Better Auth looks tokens up by identifier on every verification attempt.
+  @@index([identifier])
+  @@map("verifications")
 }

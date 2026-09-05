@@ -29,6 +29,25 @@ const serverEnvSchema = z.object({
       (value) => value.startsWith("redis://") || value.startsWith("rediss://"),
       "REDIS_URL must be a Redis connection string",
     ),
+
+  /**
+   * Signing key for session cookies and verification tokens.
+   *
+   * Rotating it invalidates every active session. Generate with:
+   *   openssl rand -base64 32
+   */
+  BETTER_AUTH_SECRET: z
+    .string()
+    .min(
+      32,
+      "BETTER_AUTH_SECRET must be at least 32 characters — generate one with `openssl rand -base64 32`",
+    ),
+
+  /**
+   * Origin Better Auth issues cookies and callback URLs for. Falls back to the
+   * public app URL, which is correct for every single-origin deployment.
+   */
+  BETTER_AUTH_URL: z.url().optional(),
 });
 
 /**
@@ -90,6 +109,8 @@ export function serverEnv(): ServerEnv {
     NODE_ENV: process.env.NODE_ENV,
     DATABASE_URL: process.env.DATABASE_URL,
     REDIS_URL: process.env.REDIS_URL,
+    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
+    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
   });
 
   if (!parsed.success) {
