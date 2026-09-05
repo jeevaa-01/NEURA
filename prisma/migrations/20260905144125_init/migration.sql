@@ -1,3 +1,13 @@
+-- Extensions required by this migration.
+--
+-- Declared here rather than relying on the docker-compose init script so that
+-- the migration is self-sufficient on ANY fresh database: Prisma's shadow
+-- database, CI, and production all get them without external provisioning.
+--   citext   : case-insensitive text, used for email/username/slug uniqueness
+--   pgcrypto : gen_random_uuid() for database-side UUID generation
+CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" UUID NOT NULL,
