@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { AppShell } from "@/components/layout/app-shell";
 import { requireSession } from "@/lib/auth";
 import { APP_ROUTE } from "@/lib/constants";
 
@@ -23,11 +24,21 @@ export default async function PlatformLayout({
 }: {
   children: ReactNode;
 }) {
-  await requireSession(APP_ROUTE);
+  const session = await requireSession(APP_ROUTE);
+  const { user } = session;
 
   return (
     <div className="dark flex flex-1 flex-col bg-background text-foreground">
-      {children}
+      <AppShell
+        user={{
+          name: user.name,
+          username: user.username,
+          email: user.email,
+          image: user.image,
+        }}
+      >
+        {children}
+      </AppShell>
     </div>
   );
 }
