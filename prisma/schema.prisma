@@ -1,0 +1,31 @@
+// NEURA — database schema
+//
+// Phase 1 (foundation) intentionally ships a single placeholder model so the
+// migration pipeline, the generated client and the connection can be verified
+// end to end. Domain models (workspaces, channels, messages, ...) are added in
+// their own phases alongside the features that own them.
+//
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Placeholder identity record.
+///
+/// The authentication phase (Better Auth / Auth.js) owns the final shape of
+/// this model and will extend it with credential, session and account tables.
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique @db.Citext
+  name      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}

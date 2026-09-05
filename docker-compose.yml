@@ -1,0 +1,63 @@
+# NEURA — local development infrastructure.
+#
+# Provides the stateful services the application depends on. There is no
+# application container yet: Next.js runs on the host (or inside WSL2) against
+# these ports, which keeps hot reload fast.
+#
+#   docker compose up -d      start PostgreSQL + Redis
+#   docker compose ps         check health
+#   docker compose down       stop (data is preserved in named volumes)
+#   docker compose down -v    stop and destroy all data
+
+name: neura
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: neura-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-neura}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-neura_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-neura}
+      # Speeds up initdb and keeps collation stable across host platforms.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Executed once, only when the data volume is first created.
+      - ./infrastructure/docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-neura} -d ${POSTGRES_DB:-neura}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: neura-redis
+    restart: unless-stopped
+    # Append-only persistence so pub/sub state and caches survive a restart.
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  postgres_data:
+    name: neura_postgres_data
+  redis_data:
+    name: neura_redis_data
