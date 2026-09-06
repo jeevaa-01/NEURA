@@ -7,6 +7,7 @@ import {
   Hash,
   Home,
   LayoutGrid,
+  LockKeyhole,
   Menu,
   MessageSquare,
   PanelRight,
@@ -28,6 +29,10 @@ import { CreateWorkspaceButton } from "@/components/shared/create-workspace-butt
 import { LogoMark } from "@/components/neura/logo-mark";
 import { Avatar } from "@/components/ui/avatar";
 import { SignOutButton } from "@/features/auth/components/sign-out-button";
+import { NotificationCenter } from "@/features/notifications/components/notification-center";
+import { createWorkspaceAction } from "@/features/workspaces/actions/create-workspace";
+import type { WorkspaceSummary } from "@/features/workspaces/types";
+import { createWorkspaceSchema } from "@/features/workspaces/validations/create-workspace-schema";
 import { cn } from "@/lib/utils";
 
 export type AppUser = {
@@ -44,6 +49,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Messages", href: "/app/messages", icon: MessageSquare },
   { label: "Activity", href: "/app/activity", icon: Activity },
   { label: "Agents", href: "/app/agents", icon: Bot },
+  { label: "Ask NEURA", href: "/app/ai", icon: Sparkles },
 ];
 
 const COMMAND_ITEMS = [
@@ -85,10 +91,19 @@ function RailLink({ item, pathname }: { item: NavItem; pathname: string }) {
 function WorkspaceSidebar({
   open,
   onClose,
+  pathname,
+  workspaces,
 }: {
   open: boolean;
   onClose: () => void;
+  pathname: string;
+  workspaces: WorkspaceSummary[];
 }) {
+  const activeSlug = pathname.match(/^\/app\/workspaces\/([^/]+)/)?.[1];
+  const activeWorkspace = workspaces.find(
+    (workspace) => workspace.slug === activeSlug,
+  );
+
   return (
     <aside
       className={cn(
@@ -108,17 +123,17 @@ function WorkspaceSidebar({
         </button>
       </div>
 
-      <div className="flex items-center justify-between border-b border-border-subtle px-4 py-4">
+      <div className="flex items-center justify-between border-b border-border-subtle bg-surface-elevated/30 px-4 py-4">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent text-sm font-bold text-[#0b0d12]">
-            N
+            {activeWorkspace?.name.slice(0, 1).toUpperCase() ?? "N"}
           </span>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-text-primary">
-              Personal space
+              {activeWorkspace?.name ?? "All workspaces"}
             </p>
             <p className="text-[10px] tracking-[0.14em] text-text-muted uppercase">
-              Workspace
+              {activeWorkspace ? "Active workspace" : "NEURA"}
             </p>
           </div>
         </div>
@@ -134,6 +149,40 @@ function WorkspaceSidebar({
       <div className="flex-1 overflow-y-auto px-3 py-5">
         <div className="mb-7">
           <SectionLabel
+            label="Workspaces"
+            action={<Plus aria-hidden className="size-3.5" />}
+          />
+          {workspaces.length ? (
+            <div className="mt-2 space-y-1">
+              {workspaces.map((workspace) => {
+                const active = workspace.slug === activeSlug;
+                return (
+                  <Link
+                    key={workspace.id}
+                    href={`/app/workspaces/${workspace.slug}`}
+                    onClick={onClose}
+                    className={cn(
+                      "focus-ring flex min-h-10 items-center gap-2 rounded-md px-2.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary",
+                      active && "bg-accent-muted text-accent",
+                    )}
+                    aria-current={active ? "page" : undefined}
+                  >
+                    <span className="flex size-6 items-center justify-center rounded bg-surface-active text-[10px] font-semibold text-accent">
+                      {workspace.name.slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="truncate">{workspace.name}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-3 rounded-md border border-dashed border-border-default px-3 py-3 text-xs leading-5 text-text-muted">
+              Your workspaces will appear here.
+            </div>
+          )}
+        </div>
+        <div className="mb-7">
+          <SectionLabel
             label="Favorites"
             action={<Plus aria-hidden className="size-3.5" />}
           />
@@ -145,12 +194,61 @@ function WorkspaceSidebar({
         <div className="mb-7">
           <SectionLabel
             label="Channels"
-            action={<Plus aria-hidden className="size-3.5" />}
+            action={
+              activeWorkspace &&
+              (activeWorkspace.role === "OWNER" ||
+                activeWorkspace.role === "ADMIN") ? (
+                <Link
+                  href={`/app/workspaces/${activeWorkspace.slug}?create=channel`}
+                  onClick={onClose}
+                  aria-label="Create channel"
+                  className="focus-ring inline-flex rounded p-1 hover:bg-surface-hover hover:text-text-primary"
+                >
+                  <Plus aria-hidden className="size-3.5" />
+                </Link>
+              ) : (
+                <Plus aria-hidden className="size-3.5" />
+              )
+            }
           />
-          <div className="mt-3 flex items-center gap-2 px-2 text-xs text-text-muted">
-            <Hash aria-hidden className="size-3.5" />
-            <span>No channels yet</span>
-          </div>
+          {activeWorkspace?.channels.length ? (
+            <div className="mt-2 space-y-0.5">
+              {activeWorkspace.channels
+                .filter((channel) => !channel.isPrivate)
+                .map((channel) => (
+                  <ChannelLink
+                    key={channel.id}
+                    channel={channel}
+                    workspaceSlug={activeWorkspace.slug}
+                    pathname={pathname}
+                    onClick={onClose}
+                  />
+                ))}
+              {activeWorkspace.channels.some(
+                (channel) => channel.isPrivate,
+              ) && (
+                <p className="px-2 pt-3 text-[10px] font-semibold tracking-[0.16em] text-text-muted uppercase">
+                  Private
+                </p>
+              )}
+              {activeWorkspace.channels
+                .filter((channel) => channel.isPrivate)
+                .map((channel) => (
+                  <ChannelLink
+                    key={channel.id}
+                    channel={channel}
+                    workspaceSlug={activeWorkspace.slug}
+                    pathname={pathname}
+                    onClick={onClose}
+                  />
+                ))}
+            </div>
+          ) : (
+            <div className="mt-3 flex items-center gap-2 px-2 text-xs text-text-muted">
+              <Hash aria-hidden className="size-3.5" />
+              <span>No channels yet</span>
+            </div>
+          )}
         </div>
 
         <div>
@@ -172,19 +270,49 @@ function WorkspaceSidebar({
   );
 }
 
+function ChannelLink({
+  channel,
+  workspaceSlug,
+  pathname,
+  onClick,
+}: {
+  channel: WorkspaceSummary["channels"][number];
+  workspaceSlug: string;
+  pathname: string;
+  onClick: () => void;
+}) {
+  const href = `/app/workspaces/${workspaceSlug}/channels/${channel.slug}`;
+  const active = pathname === href || pathname.startsWith(`${href}/`);
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={cn(
+        "focus-ring flex min-h-9 items-center gap-2 rounded-md px-2.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary",
+        active && "bg-accent-muted text-accent",
+      )}
+      aria-current={active ? "page" : undefined}
+    >
+      {channel.isPrivate ? (
+        <LockKeyhole aria-hidden className="size-3.5 shrink-0" />
+      ) : (
+        <Hash aria-hidden className="size-3.5 shrink-0" />
+      )}
+      <span className="truncate">{channel.name}</span>
+      {channel.archivedAt && (
+        <span className="ml-auto text-[9px] text-text-muted">archived</span>
+      )}
+    </Link>
+  );
+}
+
 function SectionLabel({ label, action }: { label: string; action: ReactNode }) {
   return (
     <div className="flex items-center justify-between px-2">
       <p className="text-[10px] font-semibold tracking-[0.18em] text-text-muted uppercase">
         {label}
       </p>
-      <button
-        aria-label={`Add to ${label}`}
-        title={`Add to ${label}`}
-        className="focus-ring rounded p-1 text-text-muted hover:text-text-primary"
-      >
-        {action}
-      </button>
+      <div className="p-1 text-text-muted">{action}</div>
     </div>
   );
 }
@@ -246,13 +374,13 @@ function CommandPalette({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/55 px-4 pt-[12vh] backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-background/75 px-4 pt-[12vh] backdrop-blur-[3px]"
       onMouseDown={onClose}
     >
       <motion.div
         initial={{ opacity: 0, y: -12, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        className="w-full max-w-lg overflow-hidden rounded-xl border border-border-strong bg-surface-elevated shadow-2xl"
+        className="w-full max-w-lg overflow-hidden rounded-xl border border-border-strong bg-surface-elevated shadow-[0_24px_80px_-30px_rgba(0,0,0,0.9)]"
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
@@ -429,12 +557,71 @@ function WorkspaceDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !pending) onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose, open, pending]);
+
+  function close() {
+    if (pending) return;
+    setError(null);
+    setFieldError(null);
+    setName("");
+    setDescription("");
+    onClose();
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setFieldError(null);
+    const parsed = createWorkspaceSchema.safeParse({ name, description });
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      if (issue?.path[0] === "name") setFieldError(issue.message);
+      else setError(issue?.message ?? "Enter valid workspace details.");
+      return;
+    }
+
+    setPending(true);
+    try {
+      const result = await createWorkspaceAction(parsed.data);
+      if (!result.ok) {
+        if (result.error.field === "name") setFieldError(result.error.message);
+        else setError(result.error.message);
+        return;
+      }
+      setName("");
+      setDescription("");
+      setError(null);
+      setFieldError(null);
+      onClose();
+      router.push(`/app/workspaces/${result.data.slug}`);
+      router.refresh();
+    } catch {
+      setError("The workspace could not be created. Please try again.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <AnimatePresence>
       {open && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4 backdrop-blur-[2px]"
-          onMouseDown={onClose}
+          onMouseDown={close}
         >
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -452,7 +639,8 @@ function WorkspaceDialog({
               </div>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={close}
+                disabled={pending}
                 className="focus-ring rounded-md p-2 text-text-muted hover:bg-surface-hover hover:text-text-primary"
                 aria-label="Close dialog"
               >
@@ -466,19 +654,102 @@ function WorkspaceDialog({
               id="workspace-dialog-title"
               className="text-lg font-semibold text-text-primary"
             >
-              Workspace creation is coming next.
+              Create a workspace
             </h2>
             <p className="mt-3 text-sm leading-6 text-text-secondary">
-              NEURA is preparing the workspace foundation. Your first workspace
-              will be ready to configure in the next phase.
+              Give your communication layer a name. You can refine its details
+              later.
             </p>
-            <button
-              type="button"
-              onClick={onClose}
-              className="focus-ring mt-6 inline-flex min-h-10 w-full items-center justify-center rounded-md bg-accent px-4 text-sm font-medium text-[#0b0d12] hover:bg-accent-hover"
-            >
-              Understood
-            </button>
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
+              {error && (
+                <p
+                  role="alert"
+                  className="rounded-md border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger"
+                >
+                  {error}
+                </p>
+              )}
+              <div>
+                <label
+                  htmlFor="workspace-name"
+                  className="mb-1.5 block text-xs font-medium text-text-primary"
+                >
+                  Workspace name
+                </label>
+                <input
+                  id="workspace-name"
+                  name="name"
+                  value={name}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setFieldError(null);
+                    setError(null);
+                  }}
+                  autoFocus={!pending}
+                  disabled={pending}
+                  aria-invalid={Boolean(fieldError)}
+                  aria-describedby={
+                    fieldError ? "workspace-name-error" : undefined
+                  }
+                  className="focus-ring h-11 w-full rounded-md border border-border-default bg-surface px-3 text-sm text-text-primary outline-none placeholder:text-text-muted focus:border-accent disabled:opacity-60"
+                  placeholder="NEURA Development"
+                />
+                {fieldError && (
+                  <p
+                    id="workspace-name-error"
+                    role="alert"
+                    className="mt-1.5 text-xs text-danger"
+                  >
+                    {fieldError}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label
+                  htmlFor="workspace-description"
+                  className="mb-1.5 block text-xs font-medium text-text-primary"
+                >
+                  Description{" "}
+                  <span className="font-normal text-text-muted">Optional</span>
+                </label>
+                <textarea
+                  id="workspace-description"
+                  name="description"
+                  value={description}
+                  onChange={(event) => {
+                    setDescription(event.target.value);
+                    setError(null);
+                  }}
+                  disabled={pending}
+                  rows={3}
+                  className="focus-ring w-full resize-none rounded-md border border-border-default bg-surface px-3 py-2.5 text-sm text-text-primary outline-none placeholder:text-text-muted focus:border-accent disabled:opacity-60"
+                  placeholder="A place for the team to align."
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={close}
+                  disabled={pending}
+                  className="focus-ring min-h-10 flex-1 rounded-md border border-border-default px-4 text-sm font-medium text-text-secondary hover:bg-surface-hover disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={pending}
+                  className="focus-ring inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-[#0b0d12] hover:bg-accent-hover disabled:opacity-50"
+                >
+                  {pending && (
+                    <span
+                      aria-hidden
+                      className="size-3.5 animate-spin rounded-full border-2 border-[#0b0d12]/30 border-t-[#0b0d12]"
+                    />
+                  )}
+                  {pending ? "Creating..." : "Create workspace"}
+                </button>
+              </div>
+            </form>
           </motion.div>
         </div>
       )}
@@ -489,9 +760,11 @@ function WorkspaceDialog({
 export function AppShell({
   children,
   user,
+  workspaces,
 }: {
   children: ReactNode;
   user: AppUser;
+  workspaces: WorkspaceSummary[];
 }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -509,7 +782,6 @@ export function AppShell({
       if (event.key === "Escape") {
         setSidebarOpen(false);
         setUserOpen(false);
-        setWorkspaceOpen(false);
       }
     }
     function onCreateWorkspace() {
@@ -527,7 +799,7 @@ export function AppShell({
   return (
     <div className="flex min-h-screen flex-1 bg-background">
       <nav
-        className="hidden w-[72px] shrink-0 flex-col items-center border-r border-border-subtle bg-[#0d1016] py-4 md:flex"
+        className="hidden w-[72px] shrink-0 flex-col items-center border-r border-border-subtle bg-surface py-4 md:flex"
         aria-label="Global navigation"
       >
         <Link
@@ -561,6 +833,8 @@ export function AppShell({
       <WorkspaceSidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        pathname={pathname}
+        workspaces={workspaces}
       />
       {sidebarOpen && (
         <button
@@ -572,7 +846,7 @@ export function AppShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-border-subtle bg-background/95 px-4 backdrop-blur md:px-6">
+        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-border-subtle bg-background/90 px-4 backdrop-blur-md md:px-6">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -606,6 +880,7 @@ export function AppShell({
             >
               <Search aria-hidden className="size-[18px]" />
             </button>
+            <NotificationCenter />
             <button
               type="button"
               onClick={() => setContextOpen((open) => !open)}
@@ -628,7 +903,7 @@ export function AppShell({
         </header>
 
         <div className="flex min-h-0 flex-1">
-          <main className="min-w-0 flex-1 overflow-y-auto">
+          <main className="min-w-0 flex-1 overflow-y-auto bg-background/70">
             <div className="mx-auto min-h-full w-full max-w-[1180px] px-5 py-8 pb-24 sm:px-8 lg:px-10 lg:py-10 lg:pb-10">
               {children}
             </div>
@@ -693,10 +968,10 @@ export function AppShell({
       </div>
 
       <nav
-        className="fixed right-0 bottom-0 left-0 z-20 flex h-16 items-center justify-around border-t border-border-subtle bg-surface/95 px-2 backdrop-blur md:hidden"
+        className="fixed right-0 bottom-0 left-0 z-20 flex h-16 items-center justify-around border-t border-border-subtle bg-surface/95 px-2 shadow-[0_-12px_32px_-24px_rgba(0,0,0,0.9)] backdrop-blur-md md:hidden"
         aria-label="Mobile navigation"
       >
-        {NAV_ITEMS.slice(0, 4).map((item) => {
+        {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = isActive(pathname, item.href);
           return (

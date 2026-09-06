@@ -162,8 +162,8 @@ export const auth = betterAuth({
     window: 60,
     max: 100,
     // In-memory, therefore per-process: it blunts brute force on a single
-    // instance but is not a distributed guarantee. Redis-backed limiting
-    // arrives in the Security phase — see docs/authentication.md.
+    // instance but is not a distributed guarantee. Expensive authenticated
+    // endpoints use the shared Redis limiter as well.
     storage: "memory",
     customRules: {
       // Credential endpoints are the brute-force surface, so they get far

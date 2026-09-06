@@ -33,7 +33,7 @@ export function AuthCard({
         <p className="text-sm text-balance text-muted-foreground">{subtitle}</p>
       </div>
 
-      <div className="rounded-xl border border-border bg-card/40 p-6 shadow-sm backdrop-blur-sm">
+      <div className="border-border rounded-xl border bg-card/40 p-6 shadow-sm backdrop-blur-sm">
         {children}
       </div>
 

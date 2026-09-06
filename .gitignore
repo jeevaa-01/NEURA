@@ -42,5 +42,8 @@ next-env.d.ts
 
 /lib/generated/prisma
 
+# Local private file uploads
+/storage/
+
 # Keep the environment template tracked.
 !.env.example

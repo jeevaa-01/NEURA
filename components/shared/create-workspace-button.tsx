@@ -21,7 +21,7 @@ export function CreateWorkspaceButton({
         <Plus aria-hidden className="size-4" />
         {compact ? "Create workspace" : "New workspace"}
       </span>
-      {!compact && <span className="text-xs text-text-muted">Soon</span>}
+      {!compact && <span className="text-xs text-text-muted">Create</span>}
     </Button>
   );
 }

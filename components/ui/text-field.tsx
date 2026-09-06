@@ -74,13 +74,12 @@ export function TextField({
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
         className={cn(
-          "border-input bg-background text-foreground placeholder:text-muted-foreground",
-          "h-10 w-full rounded-md border px-3 text-sm",
+          "border-border-default bg-surface text-text-primary placeholder:text-text-muted",
+          "focus-ring h-11 w-full rounded-lg border px-3 text-sm",
           "transition-[color,box-shadow,border-color] outline-none",
-          "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40",
+          "focus:border-accent",
           "disabled:cursor-not-allowed disabled:opacity-60",
-          error &&
-            "border-destructive focus-visible:border-destructive focus-visible:ring-destructive/30",
+          error && "border-danger focus:border-danger",
         )}
       />
 

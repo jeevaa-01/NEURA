@@ -14,10 +14,10 @@ const LABELS: Record<Status | "checking", string> = {
 };
 
 const COLORS: Record<Status | "checking", string> = {
-  checking: "bg-muted-foreground",
-  online: "bg-emerald-500",
-  degraded: "bg-amber-500",
-  offline: "bg-red-500",
+  checking: "bg-text-muted",
+  online: "bg-success",
+  degraded: "bg-warning",
+  offline: "bg-danger",
 };
 
 /**
@@ -52,7 +52,7 @@ export function SystemStatus() {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: 0.3 }}
-      className="flex items-center gap-2.5 rounded-full border border-border bg-card/50 px-4 py-2 text-card-foreground"
+      className="flex items-center gap-2.5 rounded-full border border-border-default bg-surface/80 px-4 py-2 text-text-primary backdrop-blur-sm"
     >
       <span className="relative flex size-2">
         {status !== "checking" && (

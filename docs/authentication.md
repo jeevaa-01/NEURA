@@ -299,11 +299,10 @@ single instance but is not a distributed guarantee: with several instances
 behind a load balancer an attacker gets the budget multiplied by the instance
 count.
 
-**Redis-backed distributed rate limiting is deferred to the Security phase.**
-Redis is already running and configured (Phase 1); the change is to point
-`rateLimit.customStorage` at it. That is the intended follow-up, and it is the
-main reason this phase's limiter should not be considered sufficient for
-production.
+Phase 17 adds a shared Redis limiter to expensive authenticated search and file
+upload endpoints. Better Auth's own limiter remains in-memory because it is
+owned by the auth library; it still provides a useful per-process credential
+brute-force budget but is not a distributed guarantee.
 
 ---
 
@@ -376,8 +375,9 @@ in place and defaults to `false`.
 
 ## 12. Known limitations
 
-1. **Rate limiting is in-memory and per-process.** Not a distributed guarantee.
-   Redis-backed limiting is the Security phase's job (§8).
+1. **Better Auth rate limiting is in-memory and per-process.** The Phase 17
+   Redis limiter covers search and uploads, but credential limits are not yet a
+   distributed guarantee.
 2. **No email delivery**, therefore no email verification and no password
    reset. A user who forgets their password currently has no self-service route.
 3. **No account lockout.** Rate limiting slows brute force but there is no
@@ -401,10 +401,12 @@ in place and defaults to `false`.
 
 ---
 
-## 13. Recommended next phase
+## 13. Recommended follow-up
 
-**Phase 4 — Workspaces and onboarding.** Authentication now produces a real
-user with no workspace, which is a dead end at `/app`.
+**Phase 18 — Final QA, production deployment and launch readiness.** The
+workspace, collaboration, AI, files, search, and hardening phases now sit on
+top of this authentication boundary; the remaining work is release validation
+and deployment decisions.
 
 Prerequisites worth settling first:
 

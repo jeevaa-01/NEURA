@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes } from "react";
 
 import { cn } from "@/lib/utils";
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "quiet";
+type ButtonVariant = "primary" | "secondary" | "ghost" | "quiet" | "danger";
 
 const variants: Record<ButtonVariant, string> = {
   primary:
@@ -11,6 +11,7 @@ const variants: Record<ButtonVariant, string> = {
     "border border-border-default bg-surface-elevated text-text-primary hover:border-border-strong hover:bg-surface-hover",
   ghost: "text-text-secondary hover:bg-surface-hover hover:text-text-primary",
   quiet: "text-text-muted hover:text-text-primary",
+  danger: "bg-danger text-[#190b0b] hover:bg-danger/85",
 };
 
 export function Button({
@@ -22,7 +23,7 @@ export function Button({
     <button
       type="button"
       className={cn(
-        "focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-md px-3.5 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
+        "focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-md px-3.5 text-sm font-medium transition-[background-color,border-color,color,transform] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50",
         variants[variant],
         className,
       )}

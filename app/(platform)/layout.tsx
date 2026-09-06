@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { getUserWorkspaces } from "@/features/workspaces/queries/get-user-workspaces";
 import { requireSession } from "@/lib/auth";
 import { APP_ROUTE } from "@/lib/constants";
 
@@ -26,6 +27,7 @@ export default async function PlatformLayout({
 }) {
   const session = await requireSession(APP_ROUTE);
   const { user } = session;
+  const workspaces = await getUserWorkspaces(user.id);
 
   return (
     <div className="dark flex flex-1 flex-col bg-background text-foreground">
@@ -36,6 +38,7 @@ export default async function PlatformLayout({
           email: user.email,
           image: user.image,
         }}
+        workspaces={workspaces}
       >
         {children}
       </AppShell>

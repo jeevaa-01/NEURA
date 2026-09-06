@@ -71,6 +71,7 @@
 
 /* Reserved for a future theme switch. Components only consume semantic vars. */
 .light {
+  color-scheme: light;
   --background: #f4f6f9;
   --surface: #ffffff;
   --surface-elevated: #ffffff;
@@ -99,11 +100,35 @@
   html {
     @apply font-sans;
     background: var(--background);
+    color-scheme: dark;
   }
 
   body {
     min-width: 320px;
     @apply bg-background text-text-primary;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--border-strong) 72%, transparent);
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+    background-clip: padding-box;
   }
 
   ::selection {
@@ -130,5 +155,16 @@
 
   .focus-ring {
     @apply outline-none focus-visible:ring-[3px] focus-visible:ring-accent/35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }

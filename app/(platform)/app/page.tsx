@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   Bot,
   Command,
+  FileText,
   MessageSquare,
   Search,
   Sparkles,
@@ -71,6 +72,78 @@ export default async function AppHomePage() {
           <div className="absolute inset-7 rounded-full border border-accent/15">
             <div className="absolute inset-7 rounded-full border border-accent/20" />
           </div>
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="getting-started-heading"
+        className="rounded-lg border border-border-default bg-surface p-5 sm:p-6"
+      >
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-text-primary">
+              A clear first run
+            </p>
+            <h2
+              id="getting-started-heading"
+              className="mt-1 text-xs text-text-muted"
+            >
+              Build a useful signal in four small steps.
+            </h2>
+          </div>
+          <span className="text-xs text-text-muted">
+            No tutorial to dismiss
+          </span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-md border border-border-subtle bg-surface-elevated p-4">
+            <span className="text-xs font-semibold text-accent">01</span>
+            <p className="mt-3 text-sm font-medium text-text-primary">
+              Create or join a workspace
+            </p>
+            <p className="mt-1 text-xs leading-5 text-text-muted">
+              Use the workspace control in the command center or accept an
+              invite.
+            </p>
+          </div>
+          <Link
+            href="/app/messages"
+            className="focus-ring rounded-md border border-border-subtle bg-surface-elevated p-4 transition-colors hover:border-border-strong hover:bg-surface-hover"
+          >
+            <MessageSquare aria-hidden className="size-4 text-accent" />
+            <p className="mt-3 text-sm font-medium text-text-primary">
+              Open a channel and message
+            </p>
+            <p className="mt-1 text-xs leading-5 text-text-muted">
+              Start a conversation, reply in a thread, and keep context
+              together.
+            </p>
+          </Link>
+          <Link
+            href="/app/messages"
+            className="focus-ring rounded-md border border-border-subtle bg-surface-elevated p-4 transition-colors hover:border-border-strong hover:bg-surface-hover"
+          >
+            <FileText aria-hidden className="size-4 text-accent" />
+            <p className="mt-3 text-sm font-medium text-text-primary">
+              Add a source file
+            </p>
+            <p className="mt-1 text-xs leading-5 text-text-muted">
+              Upload trusted notes in a channel so NEURA can find them later.
+            </p>
+          </Link>
+          <Link
+            href="/app/ai"
+            className="focus-ring rounded-md border border-border-subtle bg-surface-elevated p-4 transition-colors hover:border-border-strong hover:bg-surface-hover"
+          >
+            <Sparkles aria-hidden className="size-4 text-accent" />
+            <p className="mt-3 text-sm font-medium text-text-primary">
+              Ask NEURA, then search
+            </p>
+            <p className="mt-1 text-xs leading-5 text-text-muted">
+              Use authorized context in AI and return to Search when you need
+              the exact source.
+            </p>
+          </Link>
         </div>
       </section>
 

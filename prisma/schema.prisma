@@ -72,6 +72,18 @@ enum NotificationType {
   REACTION
   REPLY
   SYSTEM
+  MESSAGE_MENTION
+  THREAD_REPLY
+  CHANNEL_INVITATION
+  WORKSPACE_INVITATION
+  TASK_ASSIGNED
+  TASK_UPDATED
+  AI_ACTION_COMPLETED
+  AI_ACTION_FAILED
+  WORKFLOW_COMPLETED
+  WORKFLOW_FAILED
+  KNOWLEDGE_INDEXED
+  KNOWLEDGE_INDEX_FAILED
 
   @@map("notification_type")
 }
@@ -83,6 +95,110 @@ enum InviteStatus {
   EXPIRED
 
   @@map("invite_status")
+}
+
+enum AIMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+
+  @@map("ai_message_role")
+}
+
+enum KnowledgeSourceType {
+  MANUAL_TEXT
+  FILE_UPLOAD
+
+  @@map("knowledge_source_type")
+}
+
+enum AttachmentStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+  DELETED
+
+  @@map("attachment_status")
+}
+
+enum KnowledgeIndexStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+  DELETING
+
+  @@map("knowledge_index_status")
+}
+
+enum AIActionStatus {
+  PROPOSED
+  AWAITING_CONFIRMATION
+  APPROVED
+  EXECUTING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  EXPIRED
+
+  @@map("ai_action_status")
+}
+
+enum AIActionRisk {
+  SAFE_READ
+  LOW_WRITE
+  EXTERNAL_WRITE
+  DESTRUCTIVE
+
+  @@map("ai_action_risk")
+}
+
+enum TaskStatus {
+  OPEN
+  DONE
+
+  @@map("task_status")
+}
+
+enum WorkflowStatus {
+  DRAFT
+  READY
+  DISABLED
+
+  @@map("workflow_status")
+}
+
+enum WorkflowTriggerType {
+  MANUAL
+  AI_REQUEST
+
+  @@map("workflow_trigger_type")
+}
+
+enum WorkflowExecutionStatus {
+  READY
+  RUNNING
+  WAITING_CONFIRMATION
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  EXPIRED
+
+  @@map("workflow_execution_status")
+}
+
+enum WorkflowStepStatus {
+  PENDING
+  RUNNING
+  WAITING_CONFIRMATION
+  SUCCEEDED
+  FAILED
+  SKIPPED
+  CANCELLED
+
+  @@map("workflow_step_status")
 }
 
 // ===========================================================================
@@ -133,6 +249,18 @@ model User {
   sentInvites             WorkspaceInvite[]
   receivedNotifications   Notification[]       @relation("NotificationRecipient")
   performedNotifications  Notification[]       @relation("NotificationActor")
+  notificationPreference  NotificationPreference?
+  activityEvents           ActivityEvent[]      @relation("ActivityActor")
+  aiConversations         AIConversation[]
+  aiUsage                 AIUsage[]
+  aiAuditLogs             AIAuditLog[]
+  knowledgeSources        KnowledgeSource[] @relation("KnowledgeSourceCreator")
+  createdTasks             WorkspaceTask[] @relation("TaskCreator")
+  assignedTasks            WorkspaceTask[] @relation("TaskAssignee")
+  uploadedAttachments      Attachment[] @relation("AttachmentUploader")
+  aiActions                AIAction[]
+  createdWorkflows         Workflow[] @relation("WorkflowCreator")
+  workflowExecutions       WorkflowExecution[] @relation("WorkflowInitiator")
 
   // Chronological listings for administration and analytics. `email` and
   // `username` already carry unique indexes and need no separate entry.
@@ -163,6 +291,16 @@ model Workspace {
   conversations Conversation[]
   invites       WorkspaceInvite[]
   notifications Notification[]
+  aiConversations AIConversation[]
+  aiUsage        AIUsage[]
+  aiAuditLogs    AIAuditLog[]
+  knowledgeSources KnowledgeSource[]
+  attachments     Attachment[]
+  tasks           WorkspaceTask[]
+  activities      ActivityEvent[]
+  aiActions       AIAction[]
+  workflows       Workflow[]
+  workflowExecutions WorkflowExecution[]
 
   // "Workspaces owned by this user", and an index for the FK so that owner
   // lookups do not degrade into sequential scans.
@@ -211,6 +349,10 @@ model Channel {
   description String?
   type        ChannelType @default(TEXT)
   isPrivate   Boolean     @default(false) @map("is_private")
+  /// System channels are created with the workspace and cannot be deleted or archived.
+  isSystem    Boolean     @default(false) @map("is_system")
+  /// NULL means active. Archived channels remain recoverable for authorized admins.
+  archivedAt  DateTime?   @map("archived_at") @db.Timestamptz(3)
   /// Manual ordering within the workspace sidebar.
   position    Int         @default(0)
   createdById String      @map("created_by_id") @db.Uuid
@@ -222,11 +364,18 @@ model Channel {
   createdBy User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
   members   ChannelMember[]
   messages  Message[]
+  aiConversations AIConversation[]
+  knowledgeSources KnowledgeSource[]
+  attachments Attachment[]
+  notifications Notification[]
+  activities ActivityEvent[]
 
   // Channel slugs are unique per workspace, not globally.
   @@unique([workspaceId, slug])
   // Sidebar rendering: every channel of a workspace in display order.
   @@index([workspaceId, position])
+  // Accessible channel listings filter by lifecycle and visibility.
+  @@index([workspaceId, isPrivate, archivedAt, position])
   // Chronological listing (recently created channels, admin views).
   @@index([workspaceId, createdAt])
   // FK index for "channels created by this user".
@@ -407,6 +556,325 @@ model MessageMention {
 }
 
 // ===========================================================================
+// AI conversations
+// ===========================================================================
+
+/// A private AI conversation owned by one user inside one workspace.
+/// Channel context is optional and is always re-authorized before retrieval.
+model AIConversation {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  workspaceId String  @map("workspace_id") @db.Uuid
+  userId      String  @map("user_id") @db.Uuid
+  channelId   String? @map("channel_id") @db.Uuid
+  title       String  @default("New conversation")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  channel   Channel?        @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  messages  AIMessage[]
+  usage     AIUsage[]
+  auditLogs AIAuditLog[]
+  actions   AIAction[]
+  workflowExecutions WorkflowExecution[]
+
+  @@index([workspaceId, userId, updatedAt])
+  @@index([userId, updatedAt])
+  @@index([channelId, updatedAt])
+  @@map("ai_conversations")
+}
+
+/// Persisted user/assistant turns. Tool output is retained only for provider
+/// continuation and is not exposed by the normal conversation UI.
+model AIMessage {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  conversationId String        @map("conversation_id") @db.Uuid
+  role           AIMessageRole
+  content        String
+  citations      Json?
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  conversation AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt, id])
+  @@map("ai_messages")
+}
+
+/// Provider-reported usage, when available. Cost is intentionally omitted
+/// until pricing is configured and reliable for the selected model.
+model AIUsage {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  workspaceId    String    @map("workspace_id") @db.Uuid
+  conversationId String?   @map("conversation_id") @db.Uuid
+  provider       String
+  model          String
+  inputTokens    Int?      @map("input_tokens")
+  outputTokens   Int?      @map("output_tokens")
+  totalTokens    Int?      @map("total_tokens")
+  status         String
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation AIConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([conversationId, createdAt])
+  @@map("ai_usage")
+}
+
+/// Small, content-minimized audit entries for AI requests and tool execution.
+model AIAuditLog {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  workspaceId    String    @map("workspace_id") @db.Uuid
+  conversationId String?   @map("conversation_id") @db.Uuid
+  action         String
+  status         String
+  toolName       String?   @map("tool_name")
+  metadata       Json?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation AIConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([conversationId, createdAt])
+  @@map("ai_audit_logs")
+}
+
+/// A server-owned, idempotent action proposal. Payloads are validated tool
+/// inputs; identity and workspace scope are always derived from the session.
+model AIAction {
+  id              String         @id @default(uuid(7)) @db.Uuid
+  conversationId  String?        @map("conversation_id") @db.Uuid
+  userId          String         @map("user_id") @db.Uuid
+  workspaceId     String         @map("workspace_id") @db.Uuid
+  toolName        String         @map("tool_name")
+  risk            AIActionRisk
+  status          AIActionStatus @default(PROPOSED)
+  requiresConfirmation Boolean    @default(true) @map("requires_confirmation")
+  inputPayload    Json           @map("input_payload")
+  displaySummary  String         @map("display_summary")
+  resultMetadata  Json?          @map("result_metadata")
+  errorMetadata   Json?          @map("error_metadata")
+  idempotencyKey  String         @unique @map("idempotency_key")
+  confirmationAt  DateTime?      @map("confirmation_at") @db.Timestamptz(3)
+  executionStartedAt DateTime?   @map("execution_started_at") @db.Timestamptz(3)
+  executedAt      DateTime?      @map("executed_at") @db.Timestamptz(3)
+  expiresAt       DateTime?      @map("expires_at") @db.Timestamptz(3)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  conversation AIConversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workflowStep WorkflowStepExecution?
+
+  @@index([workspaceId, userId, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([workspaceId, status, expiresAt])
+  @@map("ai_actions")
+}
+
+/// Minimal task foundation used by the explicit create_task action. It is
+/// deliberately not an automation scheduler or background queue.
+model WorkspaceTask {
+  id          String     @id @default(uuid(7)) @db.Uuid
+  workspaceId String     @map("workspace_id") @db.Uuid
+  createdById String     @map("created_by_id") @db.Uuid
+  assigneeId  String?    @map("assignee_id") @db.Uuid
+  title       String
+  description String?
+  status      TaskStatus @default(OPEN)
+  dueAt       DateTime?  @map("due_at") @db.Timestamptz(3)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  assignee  User?     @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status, createdAt])
+  @@index([createdById, createdAt])
+  @@index([assigneeId, status, updatedAt])
+  @@map("workspace_tasks")
+}
+
+// ===========================================================================
+// Agent and workflow execution
+// ===========================================================================
+
+/// A small structured workflow definition. Configuration is validated against
+/// the server-side AI tool registry before it is stored.
+model Workflow {
+  id          String              @id @default(uuid(7)) @db.Uuid
+  workspaceId String              @map("workspace_id") @db.Uuid
+  createdById String              @map("created_by_id") @db.Uuid
+  name        String
+  description String?
+  status      WorkflowStatus      @default(READY)
+  trigger     WorkflowTriggerType @default(MANUAL)
+  configuration Json
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace  Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy  User               @relation("WorkflowCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  executions WorkflowExecution[]
+
+  @@index([workspaceId, status, updatedAt])
+  @@index([createdById, updatedAt])
+  @@map("workflows")
+}
+
+/// One bounded run of a workflow. The workflow definition is re-read and
+/// authorization is re-checked for every step.
+model WorkflowExecution {
+  id              String                 @id @default(uuid(7)) @db.Uuid
+  workflowId      String                 @map("workflow_id") @db.Uuid
+  conversationId  String?                @map("conversation_id") @db.Uuid
+  initiatedById   String                 @map("initiated_by_id") @db.Uuid
+  workspaceId     String                 @map("workspace_id") @db.Uuid
+  status          WorkflowExecutionStatus @default(READY)
+  currentStep     Int                    @default(0) @map("current_step")
+  failureMessage  String?                @map("failure_message")
+  resultSummary   String?                @map("result_summary")
+  startedAt       DateTime?              @map("started_at") @db.Timestamptz(3)
+  completedAt     DateTime?              @map("completed_at") @db.Timestamptz(3)
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workflow     Workflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  conversation AIConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  initiatedBy  User            @relation("WorkflowInitiator", fields: [initiatedById], references: [id], onDelete: Restrict)
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  steps        WorkflowStepExecution[]
+
+  @@index([workflowId, createdAt])
+  @@index([workspaceId, initiatedById, createdAt])
+  @@index([workspaceId, status, updatedAt])
+  @@map("workflow_executions")
+}
+
+/// Persisted result for one sequential workflow step. The step id is the
+/// stable idempotency boundary for retries and duplicate execution requests.
+model WorkflowStepExecution {
+  id            String             @id @default(uuid(7)) @db.Uuid
+  executionId   String             @map("execution_id") @db.Uuid
+  stepIndex     Int                @map("step_index")
+  toolName      String             @map("tool_name")
+  inputPayload  Json               @map("input_payload")
+  confirmationRequired Boolean      @default(false) @map("confirmation_required")
+  status        WorkflowStepStatus @default(PENDING)
+  resultSummary String?            @map("result_summary")
+  resultPayload Json?              @map("result_payload")
+  errorMessage  String?            @map("error_message")
+  aiActionId    String?            @unique @map("ai_action_id") @db.Uuid
+  startedAt     DateTime?          @map("started_at") @db.Timestamptz(3)
+  completedAt   DateTime?          @map("completed_at") @db.Timestamptz(3)
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  execution WorkflowExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  aiAction  AIAction?         @relation(fields: [aiActionId], references: [id], onDelete: SetNull)
+
+  @@unique([executionId, stepIndex])
+  @@index([executionId, status, stepIndex])
+  @@map("workflow_step_executions")
+}
+
+// ===========================================================================
+// Knowledge and RAG
+// ===========================================================================
+
+/// An explicitly-created text knowledge source. Binary uploads are not part of
+/// the current storage boundary, so raw manual text is retained in its
+/// document for deterministic retry/re-index operations.
+model KnowledgeSource {
+  id          String               @id @default(uuid(7)) @db.Uuid
+  workspaceId String               @map("workspace_id") @db.Uuid
+  channelId   String?              @map("channel_id") @db.Uuid
+  createdById String               @map("created_by_id") @db.Uuid
+  attachmentId String?            @unique @map("attachment_id") @db.Uuid
+  type        KnowledgeSourceType
+  name        String
+  status      KnowledgeIndexStatus  @default(PENDING)
+  errorMessage String?             @map("error_message")
+  lastIndexedAt DateTime?          @map("last_indexed_at") @db.Timestamptz(3)
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel   Channel?         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  createdBy User             @relation("KnowledgeSourceCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  document  KnowledgeDocument?
+  attachment Attachment?          @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status, updatedAt])
+  @@index([workspaceId, channelId, status])
+  @@index([createdById, createdAt])
+  @@map("knowledge_sources")
+}
+
+/// Logical text document behind a source. `content` is bounded normalized
+/// text, not an executable file or path.
+model KnowledgeDocument {
+  id          String               @id @default(uuid(7)) @db.Uuid
+  sourceId    String               @unique @map("source_id") @db.Uuid
+  workspaceId String               @map("workspace_id") @db.Uuid
+  channelId   String?              @map("channel_id") @db.Uuid
+  title       String
+  mimeType    String               @map("mime_type")
+  content     String
+  checksum    String
+  status      KnowledgeIndexStatus @default(PENDING)
+  errorMessage String?             @map("error_message")
+  chunkCount  Int                  @default(0) @map("chunk_count")
+  lastIndexedAt DateTime?          @map("last_indexed_at") @db.Timestamptz(3)
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  source KnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  chunks KnowledgeChunk[]
+
+  @@index([workspaceId, status, updatedAt])
+  @@index([workspaceId, channelId, status])
+  @@index([checksum])
+  @@map("knowledge_documents")
+}
+
+/// A bounded searchable unit. Embeddings use JSON until the deployed
+/// PostgreSQL image provides pgvector; VectorStore is the replacement seam.
+model KnowledgeChunk {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  documentId    String   @map("document_id") @db.Uuid
+  workspaceId   String   @map("workspace_id") @db.Uuid
+  channelId     String?  @map("channel_id") @db.Uuid
+  content       String
+  chunkIndex    Int      @map("chunk_index")
+  characterCount Int     @map("character_count")
+  tokenCount    Int?     @map("token_count")
+  metadata      Json?
+  embedding     Json
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([workspaceId, channelId, documentId])
+  @@index([documentId, chunkIndex])
+  @@map("knowledge_chunks")
+}
+
+// ===========================================================================
 // Notifications
 // ===========================================================================
 
@@ -418,8 +886,15 @@ model Notification {
   type        NotificationType
   messageId   String?          @map("message_id") @db.Uuid
   workspaceId String?          @map("workspace_id") @db.Uuid
+  channelId   String?          @map("channel_id") @db.Uuid
+  resourceId  String?          @map("resource_id") @db.Uuid
   /// Who caused it. NULL for SYSTEM notifications.
   actorId     String?          @map("actor_id") @db.Uuid
+  title       String
+  body        String
+  metadata    Json?
+  targetPath  String?          @map("target_path")
+  dedupKey    String?          @unique @map("dedup_key")
 
   isRead Boolean   @default(false) @map("is_read")
   readAt DateTime? @map("read_at") @db.Timestamptz(3)
@@ -428,8 +903,9 @@ model Notification {
 
   user      User       @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
   actor     User?      @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
-  message   Message?   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message   Message?   @relation(fields: [messageId], references: [id], onDelete: SetNull)
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel   Channel?   @relation(fields: [channelId], references: [id], onDelete: SetNull)
 
   // The unread badge and the unread feed. `is_read` sits in the middle so the
   // index can filter on it and still return rows already ordered by created_at.
@@ -438,7 +914,51 @@ model Notification {
   // above: that one cannot produce a created_at ordering that spans both
   // is_read values without a sort.
   @@index([userId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([channelId, createdAt])
   @@map("notifications")
+}
+
+/// Per-user in-app notification controls. Missing rows use the default true
+/// policy; invitation notifications are always delivered.
+model NotificationPreference {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  mentions        Boolean  @default(true)
+  threadReplies   Boolean  @default(true) @map("thread_replies")
+  reactions       Boolean  @default(true)
+  taskAssignments Boolean  @default(true) @map("task_assignments")
+  aiActions       Boolean  @default(true) @map("ai_actions")
+  workflows       Boolean  @default(true)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+/// User-facing workspace history. Security audits remain in AIAuditLog and
+/// are intentionally not duplicated here.
+model ActivityEvent {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  channelId   String?  @map("channel_id") @db.Uuid
+  actorId     String?  @map("actor_id") @db.Uuid
+  resourceId  String?  @map("resource_id") @db.Uuid
+  type        String
+  title       String
+  body        String
+  metadata    Json?
+  dedupKey    String?  @unique @map("dedup_key")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel   Channel?  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  actor     User?     @relation("ActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([channelId, createdAt])
+  @@map("activity_events")
 }
 
 // ===========================================================================
@@ -450,7 +970,8 @@ model Notification {
 model WorkspaceInvite {
   id          String            @id @default(uuid(7)) @db.Uuid
   workspaceId String            @map("workspace_id") @db.Uuid
-  /// Opaque token used in the invite URL.
+  /// SHA-256 digest of the opaque token used in the invite URL. The raw token
+  /// is never persisted; the application hashes the URL token before lookup.
   code        String            @unique
   /// NULL for a shareable link that anyone may redeem.
   email       String?           @db.Citext
@@ -488,21 +1009,36 @@ model WorkspaceInvite {
 /// caches a resolved public URL when one exists. No upload logic lives here.
 model Attachment {
   id         String  @id @default(uuid(7)) @db.Uuid
-  messageId  String  @map("message_id") @db.Uuid
+  messageId  String? @map("message_id") @db.Uuid
+  workspaceId String? @map("workspace_id") @db.Uuid
+  channelId String? @map("channel_id") @db.Uuid
+  uploadedById String? @map("uploaded_by_id") @db.Uuid
   fileName   String  @map("file_name")
   mimeType   String  @map("mime_type")
   /// Size in bytes.
   size       Int
   storageKey String  @map("storage_key")
   url        String?
+  checksum   String?
+  status     AttachmentStatus @default(PENDING)
+  errorMessage String? @map("error_message")
+  indexedAt DateTime? @map("indexed_at") @db.Timestamptz(3)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message Message? @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel Channel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  uploadedBy User? @relation("AttachmentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  knowledgeSource KnowledgeSource?
 
   // "Load the attachments for these messages" — issued alongside every message
   // page fetch.
   @@index([messageId])
+  @@index([workspaceId, channelId, createdAt])
+  @@index([uploadedById, status, createdAt])
   @@map("attachments")
 }
 

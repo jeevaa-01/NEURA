@@ -1,0 +1,147 @@
+# NEURA — Deployment Guide
+
+This is the smallest deployment shape supported by the current architecture:
+
+```text
+one Next.js application + PostgreSQL + Redis + private persistent file storage
+```
+
+NEURA is a modular monolith. PostgreSQL remains the source of truth for users,
+workspaces, messages, files, knowledge, tasks, workflows, and notifications.
+Redis supports realtime fan-out and shared rate limits.
+
+## 1. Requirements
+
+- Node.js `>=20.9.0` and npm 10 or newer.
+- PostgreSQL 16 or a compatible supported PostgreSQL service.
+- Redis 7 or a compatible Redis service.
+- A host/runtime that supports Node.js and long-lived HTTP streaming for SSE.
+- Private persistent storage for uploaded files.
+
+Docker Compose in the repository provisions PostgreSQL and Redis for local
+development. It is not an application deployment manifest.
+
+## 2. PostgreSQL
+
+Set `DATABASE_URL` to the production PostgreSQL connection string. Apply the
+checked-in migration history before starting the application:
+
+```bash
+npm ci
+npm run db:deploy
+```
+
+Use managed PostgreSQL or scheduled `pg_dump`/provider snapshots in production.
+Do not use `db:push` for a production release. Confirm the target database is
+backed up before applying migrations.
+
+## 3. Redis
+
+Set `REDIS_URL` to the production Redis connection string. Redis is needed for
+realtime fan-out, AI limits, and shared search/upload limits. Core PostgreSQL
+writes remain authoritative if realtime is temporarily unavailable.
+
+For multiple application instances, all instances must use the same Redis
+deployment. Redis pub/sub does not replace durable database persistence.
+
+## 4. Environment variables
+
+Copy the complete variable list from `.env.example` into the deployment secret
+manager. At minimum configure:
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `NODE_ENV` | Yes | `production` for the release runtime. |
+| `DATABASE_URL` | Yes | PostgreSQL connection string. |
+| `REDIS_URL` | Yes | Redis connection string. |
+| `BETTER_AUTH_SECRET` | Yes | Unique secret, at least 32 characters. |
+| `NEXT_PUBLIC_APP_URL` | Yes | Public HTTPS application origin. |
+| `BETTER_AUTH_URL` | Optional | Auth origin when different from the app origin. |
+| `OPENAI_API_KEY` | Optional | Enables AI provider requests and semantic RAG. |
+| `OPENAI_MODEL` | Optional | Server-side AI model selection. |
+| `FILE_STORAGE_ROOT` | Yes | Private persistent storage directory. |
+| `FILE_*` / `KNOWLEDGE_*` | Optional | Server-side size and processing limits. |
+
+Never expose `BETTER_AUTH_SECRET`, `DATABASE_URL`, `REDIS_URL`, or
+`OPENAI_API_KEY` through `NEXT_PUBLIC_*`. Use HTTPS in production so Better
+Auth cookies are marked secure.
+
+## 5. Build and start
+
+```bash
+npm ci
+npm run db:deploy
+npm run build
+npm run start -- -p 3000
+```
+
+Place TLS termination and a reverse proxy/load balancer in front of the Node
+process. Forward normal HTTP requests and streaming responses without buffering
+or an aggressive idle timeout.
+
+## 6. File storage
+
+Set `FILE_STORAGE_ROOT` to a persistent directory outside the Next.js `public`
+directory. The application generates opaque storage keys and authorizes every
+download through the channel/workspace boundary.
+
+For one instance, a mounted volume is sufficient. Before horizontally scaling,
+replace the local provider with a shared private object store through the
+existing storage abstraction, or mount shared durable storage. Back up file
+bytes independently of PostgreSQL metadata.
+
+## 7. SSE and realtime
+
+`/api/realtime` and `/api/realtime/notifications` use authenticated SSE. The
+runtime must support long-lived streaming connections, flush event chunks, and
+avoid proxy buffering. A serverless platform that terminates requests quickly
+is not sufficient unless its streaming and timeout behavior is explicitly
+compatible.
+
+The client should reconnect and reload authoritative database state. Redis
+outages may interrupt live updates, but messages and notifications already
+persisted in PostgreSQL remain available.
+
+## 8. OpenAI and RAG
+
+AI is optional. Without `OPENAI_API_KEY`, collaboration, files, standard search,
+and persisted knowledge metadata remain available, while provider-dependent AI
+and semantic embedding operations report a safe unavailable state.
+
+Uploaded document indexing is synchronous after upload. Failed indexing keeps
+the original file and exposes a retryable failed status.
+
+## 9. Health check
+
+Probe the deployment with:
+
+```bash
+curl -i https://your-domain.example/api/health
+```
+
+The response contains only aggregate status, timestamps, and dependency
+latencies. `200` means online or degraded; `503` means all checked stateful
+dependencies are unavailable. It does not expose connection strings, secrets,
+storage paths, or provider credentials.
+
+## 10. Backups and rollback
+
+- Back up PostgreSQL before migrations and retain tested restore points.
+- Back up the private file-storage directory/object store and verify metadata
+  and bytes can be restored together.
+- Redis is reconstructible infrastructure; do not treat it as the durable copy
+  of messages or notifications.
+- Prefer forward-compatible application releases and migrations. If a release
+  must be rolled back, keep the database at a schema version supported by the
+  previous application and follow the migration's documented compatibility.
+  Do not manually delete migration records or use destructive reset commands.
+
+## 11. Known limitations
+
+- No deployment provider adapter is included; the application must run on a
+  Node-compatible host with SSE support.
+- Local file storage is not a shared multi-instance store.
+- Better Auth credential limits remain per-process; AI/search/upload limits use
+  Redis.
+- There is no automated authenticated E2E suite, antivirus scanner, OCR worker,
+  or background indexing queue.

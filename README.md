@@ -3,9 +3,14 @@
 **Intelligent Communication Infrastructure**
 
 NEURA is a lightweight, real-time collaboration and communication platform.
-This repository currently contains the **Phase 1 foundation**: project
-structure, infrastructure, data layer and tooling. No product features are
-implemented yet.
+The repository contains the complete initial-launch product: authentication,
+workspaces, channels, messaging, files, knowledge/RAG, AI, workflows, tasks,
+notifications, activity, realtime, and unified search.
+
+> **Launch status:** Phase 18 final QA and deployment preparation complete.
+> The architecture is frozen for the initial launch; future work should be
+> driven by real usage, performance data, support requests, and security
+> findings.
 
 ---
 
@@ -22,14 +27,18 @@ implemented yet.
 | **Validation**           | Zod                                                             |
 | **Infrastructure**       | Docker Compose (local, zero-cost)                               |
 
-### Deliberately not included yet
+### Launch feature set
 
-Authentication, messaging, WebRTC/voice, AI agents and Socket.IO are each their
-own phase. The directory structure reserves a home for them, but no placeholder
-or mock business logic has been written.
+The initial launch includes authenticated collaboration, public/private
+channels, messages and threads, reactions and mentions, realtime presence and
+notifications, private file uploads/downloads, text extraction and RAG,
+context-aware AI with governed actions, agents/workflows, tasks, activity, and
+permission-filtered unified search. See
+[docs/production-readiness.md](docs/production-readiness.md) and
+[docs/deployment.md](docs/deployment.md) for operating requirements.
 
-The one exception is `GET /api/health`, which is real infrastructure: it probes
-PostgreSQL and Redis, and is what the landing page's status indicator reads.
+`GET /api/health` is a real infrastructure probe for PostgreSQL and Redis; it
+returns aggregate status without exposing credentials.
 
 ---
 
@@ -296,12 +305,13 @@ NEURA/
 
 ---
 
-## 10. Roadmap
+## 10. Release documentation
 
-Phase 1 (this repository) is complete. Subsequent phases, each self-contained:
+- [Deployment guide](docs/deployment.md)
+- [Launch checklist](docs/launch-checklist.md)
+- [Production readiness](docs/production-readiness.md)
+- [Authentication architecture](docs/authentication.md)
 
-1. **Authentication** — Better Auth or Auth.js; owns the final `User` schema.
-2. **Workspaces & channels** — core domain models.
-3. **Messaging** — persistence and history.
-4. **Realtime** — Socket.IO with the Redis adapter for multi-process fan-out.
-5. **Notifications**, **voice** (WebRTC), and **agents**.
+The core architecture is considered feature complete for the initial launch.
+Do not add another major architecture phase without evidence from real users,
+measured performance, support requests, or security findings.

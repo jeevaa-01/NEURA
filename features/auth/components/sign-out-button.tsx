@@ -33,9 +33,9 @@ export function SignOutButton() {
       disabled={pending}
       aria-busy={pending}
       className={cn(
-        "inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-foreground",
+        "border-border inline-flex h-9 items-center gap-2 rounded-md border px-3 text-foreground",
         "text-sm font-medium transition-colors outline-none",
-        "hover:bg-accent hover:text-accent-foreground",
+        "hover:text-accent-foreground hover:bg-accent",
         "focus-visible:ring-[3px] focus-visible:ring-ring/50",
         "disabled:cursor-not-allowed disabled:opacity-60",
       )}

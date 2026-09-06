@@ -10,8 +10,8 @@ export function PageHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-5 border-b border-border-subtle pb-6 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
-      <div>
+    <header className="flex flex-col gap-5 border-b border-border-subtle pb-7 sm:flex-row sm:items-end sm:justify-between sm:gap-8">
+      <div className="min-w-0 flex-1">
         <p className="mb-3 text-[10px] font-semibold tracking-[0.2em] text-accent uppercase">
           {eyebrow}
         </p>
@@ -22,7 +22,7 @@ export function PageHeader({
           {description}
         </p>
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </header>
   );
 }
