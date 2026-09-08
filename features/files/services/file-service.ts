@@ -12,7 +12,7 @@ import { emitApplicationEvent } from "@/features/notifications";
 import { serverEnv } from "@/lib/validations/env";
 
 import { chunkDocument } from "@/features/knowledge/services/chunker";
-import { embedChunks } from "@/features/knowledge/services/embeddings";
+import { embedChunksForIndexing } from "@/features/knowledge/services/embeddings";
 import { vectorStore } from "@/features/knowledge/services/vector-store";
 
 import { storageProvider } from "./storage";
@@ -210,7 +210,9 @@ export async function indexAttachment(attachmentId: string, userId: string) {
     if (text.length > config.KNOWLEDGE_MAX_DOCUMENT_CHARACTERS)
       throw new Error("The extracted document is too large to index.");
     const chunks = chunkDocument(text);
-    const embeddings = await embedChunks(chunks.map((chunk) => chunk.content));
+    const embeddings = await embedChunksForIndexing(
+      chunks.map((chunk) => chunk.content),
+    );
     if (embeddings.vectors.length !== chunks.length)
       throw new Error("The document could not be embedded.");
 

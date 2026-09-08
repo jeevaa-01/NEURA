@@ -134,16 +134,27 @@ export function NotificationCenter({
     useState<NotificationPreferences | null>(null);
   const [showPreferences, setShowPreferences] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [page, count] = await Promise.all([
-      listNotificationsAction({}),
-      getUnreadNotificationCountAction(),
-    ]);
-    if (page.ok) setItems(page.data.items);
-    if (count.ok) setUnread(count.data);
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const [page, count] = await Promise.all([
+        listNotificationsAction({}),
+        getUnreadNotificationCountAction(),
+      ]);
+      if (!page.ok || !count.ok) {
+        setLoadError("Notifications could not be loaded. Please try again.");
+        return;
+      }
+      setItems(page.data.items);
+      setUnread(count.data);
+    } catch {
+      setLoadError("Notifications could not be loaded. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -204,6 +215,7 @@ export function NotificationCenter({
   }, [load]);
 
   const markRead = async (item: NotificationSummary) => {
+    setLoadError(null);
     if (item.isRead) return;
     const result = await markNotificationReadAction({
       notificationId: item.id,
@@ -217,32 +229,57 @@ export function NotificationCenter({
         ),
       );
       setUnread((current) => Math.max(0, current - 1));
+    } else {
+      setLoadError("This notification could not be marked as read.");
     }
   };
 
   const markAllRead = async () => {
-    const result = await markAllNotificationsReadAction();
-    if (result.ok) {
-      setItems((current) =>
-        current.map((item) => ({
-          ...item,
-          isRead: true,
-          readAt: new Date().toISOString(),
-        })),
-      );
-      setUnread(0);
+    setLoadError(null);
+    try {
+      const result = await markAllNotificationsReadAction();
+      if (result.ok) {
+        setItems((current) =>
+          current.map((item) => ({
+            ...item,
+            isRead: true,
+            readAt: new Date().toISOString(),
+          })),
+        );
+        setUnread(0);
+      } else {
+        setLoadError("Notifications could not be marked as read.");
+      }
+    } catch {
+      setLoadError("Notifications could not be marked as read.");
     }
   };
 
   const loadPreferences = async () => {
-    const result = await getNotificationPreferencesAction();
-    if (result.ok) setPreferences(result.data);
+    setLoadError(null);
+    try {
+      const result = await getNotificationPreferencesAction();
+      if (result.ok) setPreferences(result.data);
+      else setLoadError("Notification preferences could not be loaded.");
+    } catch {
+      setLoadError("Notification preferences could not be loaded.");
+    }
     setShowPreferences(true);
   };
 
   const savePreferences = async (value: NotificationPreferences) => {
+    const previous = preferences;
     setPreferences(value);
-    await updateNotificationPreferencesAction(value);
+    try {
+      const result = await updateNotificationPreferencesAction(value);
+      if (!result.ok) {
+        if (previous) setPreferences(previous);
+        setLoadError("Notification preferences could not be saved.");
+      }
+    } catch {
+      if (previous) setPreferences(previous);
+      setLoadError("Notification preferences could not be saved.");
+    }
   };
 
   const content = (
@@ -250,8 +287,10 @@ export function NotificationCenter({
       className={
         expanded
           ? "max-w-2xl"
-          : "absolute top-12 right-0 z-50 w-[min(380px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-border-strong bg-surface-elevated shadow-2xl"
+          : "absolute top-12 right-0 z-[70] flex max-h-[calc(100dvh-1rem)] w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-border-strong bg-surface-elevated shadow-2xl"
       }
+      role={!expanded ? "dialog" : undefined}
+      aria-label={!expanded ? "Notification center" : undefined}
     >
       <div className="flex items-center justify-between border-b border-border-default px-4 py-3">
         <div>
@@ -304,11 +343,26 @@ export function NotificationCenter({
           />
         </div>
       )}
+      {loadError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 border-b border-danger/30 bg-danger/10 px-4 py-3 text-xs text-danger"
+        >
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="focus-ring shrink-0 rounded px-2 py-1 font-medium hover:bg-danger/10"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <div
         className={
           expanded
-            ? "rounded-lg border border-border-default"
-            : "max-h-[min(520px,70vh)] overflow-y-auto"
+            ? "min-h-0 rounded-lg border border-border-default"
+            : "max-h-[min(520px,70vh)] min-h-0 overflow-y-auto"
         }
       >
         {loading && !items.length ? (
@@ -350,6 +404,8 @@ export function NotificationCenter({
         onClick={() => setOpen((value) => !value)}
         className="focus-ring relative flex size-10 items-center justify-center rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary"
         aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         title="Notifications"
       >
         <Bell aria-hidden className="size-[18px]" />

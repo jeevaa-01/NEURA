@@ -118,6 +118,12 @@ export function LoginForm() {
       <SubmitButton pending={pending} pendingLabel="Signing in…">
         Sign in
       </SubmitButton>
+      <a
+        href="/forgot-password"
+        className="text-right text-xs text-text-secondary underline-offset-4 hover:text-accent hover:underline"
+      >
+        Forgot password?
+      </a>
     </form>
   );
 }

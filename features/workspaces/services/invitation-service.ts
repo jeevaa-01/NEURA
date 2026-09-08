@@ -6,8 +6,8 @@ import {
   Prisma,
   WorkspaceRoleType,
 } from "@/lib/generated/prisma/client";
-import { APP_URL } from "@/lib/constants";
 import { prisma } from "@/lib/db/client";
+import { clientEnv, serverEnv } from "@/lib/validations/env";
 
 import type { InvitationStatus, InvitationSummary } from "../types";
 
@@ -34,7 +34,8 @@ export function hashInvitationToken(token: string) {
 }
 
 export function getInvitationUrl(token: string) {
-  return `${APP_URL}/invite/${token}`;
+  const baseURL = serverEnv().BETTER_AUTH_URL ?? clientEnv.NEXT_PUBLIC_APP_URL;
+  return `${baseURL}/invite/${token}`;
 }
 
 function isRetryableTransactionError(error: unknown) {

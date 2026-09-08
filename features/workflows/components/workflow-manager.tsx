@@ -4,9 +4,11 @@ import {
   Check,
   CircleAlert,
   LoaderCircle,
+  Pencil,
   Play,
   Plus,
   ShieldCheck,
+  Trash2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -21,6 +23,9 @@ import { runWorkflowAction } from "../actions/run-workflow";
 import { cancelWorkflowExecutionAction } from "../actions/cancel-execution";
 import { resumeWorkflowAfterActionAction } from "../actions/resume-after-action";
 import { planWorkflowAction } from "../actions/plan-workflow";
+import { updateWorkflowAction } from "../actions/update-workflow";
+import { setWorkflowStatusAction } from "../actions/set-status";
+import { deleteWorkflowAction } from "../actions/delete-workflow";
 import type { WorkflowExecutionSummary, WorkflowSummary } from "../types";
 
 type Template = "channel" | "tasks" | "knowledge";
@@ -48,6 +53,9 @@ export function WorkflowManager({
   const [error, setError] = useState<string | null>(null);
   const [activeExecution, setActiveExecution] =
     useState<WorkflowExecutionSummary | null>(null);
+  const [editingWorkflowId, setEditingWorkflowId] = useState<string | null>(
+    null,
+  );
 
   const workspace = useMemo(
     () => workspaces.find((item) => item.id === workspaceId),
@@ -112,6 +120,7 @@ export function WorkflowManager({
           title: "Review unresolved workspace item",
           description: "{{step.0.result}}",
           dueAt: null,
+          assigneeId: null,
         },
         confirmation: true,
       },
@@ -122,15 +131,92 @@ export function WorkflowManager({
     if (!workspaceId || !name.trim()) return;
     setBusy(true);
     setError(null);
-    const result = await createWorkflowAction({
-      workspaceId,
-      name,
-      trigger: "MANUAL",
-      steps: definition(),
-    });
+    const result = editingWorkflowId
+      ? await updateWorkflowAction({
+          workflowId: editingWorkflowId,
+          workspaceId,
+          name,
+          trigger: "MANUAL",
+          steps: definition(),
+        })
+      : await createWorkflowAction({
+          workspaceId,
+          name,
+          trigger: "MANUAL",
+          steps: definition(),
+        });
     if (result.ok) {
-      setWorkflows((items) => [result.data, ...items]);
+      setWorkflows((items) =>
+        editingWorkflowId
+          ? items.map((item) =>
+              item.id === result.data.id ? result.data : item,
+            )
+          : [result.data, ...items],
+      );
+      setEditingWorkflowId(null);
     } else setError(result.error.message);
+    setBusy(false);
+  }
+
+  function editWorkflow(workflow: WorkflowSummary) {
+    setEditingWorkflowId(workflow.id);
+    setWorkspaceId(workflow.workspaceId);
+    setName(workflow.name);
+    const tools = workflow.definition.steps.map((step) => step.tool);
+    if (tools.includes("create_task")) setTemplate("tasks");
+    else if (tools.includes("create_knowledge_document"))
+      setTemplate("knowledge");
+    else setTemplate("channel");
+    const channelStep = workflow.definition.steps.find(
+      (step) =>
+        typeof step.input === "object" &&
+        step.input !== null &&
+        "channelId" in step.input,
+    );
+    if (
+      channelStep &&
+      typeof channelStep.input === "object" &&
+      channelStep.input !== null
+    ) {
+      const value = (channelStep.input as { channelId?: unknown }).channelId;
+      if (typeof value === "string") setChannelId(value);
+    }
+    setError(null);
+  }
+
+  async function changeWorkflowStatus(
+    workflow: WorkflowSummary,
+    status: "READY" | "DISABLED",
+  ) {
+    setBusy(true);
+    setError(null);
+    const result = await setWorkflowStatusAction({
+      workflowId: workflow.id,
+      status,
+    });
+    if (result.ok)
+      setWorkflows((items) =>
+        items.map((item) => (item.id === result.data.id ? result.data : item)),
+      );
+    else setError(result.error.message);
+    setBusy(false);
+  }
+
+  async function archiveWorkflow(workflow: WorkflowSummary) {
+    if (
+      !window.confirm(
+        `Archive workflow “${workflow.name}”? Execution history will be preserved.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    const result = await deleteWorkflowAction({ workflowId: workflow.id });
+    if (result.ok)
+      setWorkflows((items) =>
+        items.map((item) => (item.id === result.data.id ? result.data : item)),
+      );
+    else setError(result.error.message);
     setBusy(false);
   }
 
@@ -215,7 +301,9 @@ export function WorkflowManager({
             </span>
             <div>
               <h2 className="text-sm font-semibold text-text-primary">
-                Create a bounded workflow
+                {editingWorkflowId
+                  ? "Edit bounded workflow"
+                  : "Create a bounded workflow"}
               </h2>
               <p className="mt-1 text-xs leading-5 text-text-muted">
                 Structured plans use only governed NEURA tools.
@@ -321,7 +409,7 @@ export function WorkflowManager({
               ) : (
                 <Plus aria-hidden className="size-3.5" />
               )}
-              Create workflow
+              {editingWorkflowId ? "Save workflow" : "Create workflow"}
             </button>
           </div>
           <div className="mt-6 border-t border-border-subtle pt-5">
@@ -369,9 +457,9 @@ export function WorkflowManager({
             {workflows.map((workflow) => (
               <div
                 key={workflow.id}
-                className="flex items-center gap-3 rounded-md border border-border-subtle bg-surface-elevated px-3 py-3"
+                className="flex flex-wrap items-center gap-2 rounded-md border border-border-subtle bg-surface-elevated px-3 py-3"
               >
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 basis-full sm:basis-auto">
                   <p className="truncate text-xs font-medium text-text-primary">
                     {workflow.name}
                   </p>
@@ -380,15 +468,48 @@ export function WorkflowManager({
                     {statusLabel(workflow.status)}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void runWorkflow(workflow.id)}
-                  disabled={busy}
-                  className="focus-ring flex items-center gap-1.5 rounded-md border border-border-default px-2.5 py-1.5 text-[11px] text-text-secondary hover:bg-surface-hover disabled:opacity-50"
-                >
-                  <Play aria-hidden className="size-3" />
-                  Run
-                </button>
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+                  <button
+                    type="button"
+                    aria-label={`Edit ${workflow.name}`}
+                    onClick={() => editWorkflow(workflow)}
+                    disabled={busy}
+                    className="focus-ring rounded-md p-1.5 text-text-muted hover:bg-surface-hover hover:text-text-primary disabled:opacity-50"
+                  >
+                    <Pencil aria-hidden className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void changeWorkflowStatus(
+                        workflow,
+                        workflow.status === "DISABLED" ? "READY" : "DISABLED",
+                      )
+                    }
+                    disabled={busy}
+                    className="focus-ring rounded-md border border-border-default px-2 py-1.5 text-[11px] text-text-secondary hover:bg-surface-hover disabled:opacity-50"
+                  >
+                    {workflow.status === "DISABLED" ? "Enable" : "Disable"}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Archive ${workflow.name}`}
+                    onClick={() => void archiveWorkflow(workflow)}
+                    disabled={busy}
+                    className="focus-ring rounded-md p-1.5 text-danger hover:bg-danger/10 disabled:opacity-50"
+                  >
+                    <Trash2 aria-hidden className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void runWorkflow(workflow.id)}
+                    disabled={busy || workflow.status !== "READY"}
+                    className="focus-ring flex items-center gap-1.5 rounded-md border border-border-default px-2.5 py-1.5 text-[11px] text-text-secondary hover:bg-surface-hover disabled:opacity-50"
+                  >
+                    <Play aria-hidden className="size-3" />
+                    Run
+                  </button>
+                </div>
               </div>
             ))}
           </div>

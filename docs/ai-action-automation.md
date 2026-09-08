@@ -48,7 +48,7 @@ This is intentionally not a general agent runtime. Scheduling, recurring jobs, b
 
 ## Task foundation
 
-Because NEURA had no task domain before Phase 12, `workspace_tasks` provides the smallest useful foundation: title, description, open/done status, optional due date, workspace, and creator. `create_task` creates only for the authenticated actor and does not implement task assignment, notifications, scheduling, or recurrence.
+Because NEURA had no task domain before Phase 12, `workspace_tasks` provides the smallest useful foundation: title, description, open/done status, optional due date, workspace, creator, and an optional assignee. The task Server Actions now provide create, read, list, update, status change, and delete through one authenticated task service. Assignees must be active members of the same workspace; creators and workspace managers can edit/delete, while an assignee can change only status. Hard deletion is safe because no model has a task foreign key, and search therefore excludes deleted rows automatically. Priority, channel scope, scheduling, and recurrence remain unsupported because the current schema does not model them.
 
 ## Operational notes
 

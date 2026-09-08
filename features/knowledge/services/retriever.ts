@@ -3,10 +3,12 @@ import {
   canAccessChannel,
   requireWorkspaceMembership,
 } from "@/features/workspaces";
+import { prisma } from "@/lib/db/client";
 
 import { toKnowledgeCitation, citationLabel } from "./citation-builder";
 import { getKnowledgeConfig } from "./config";
 import { OpenAIEmbeddingService } from "./embeddings";
+import { KnowledgeError } from "./errors";
 import { vectorStore } from "./vector-store";
 import type { KnowledgeCitation, KnowledgeSearchResult } from "../types";
 
@@ -43,7 +45,24 @@ export async function retrieveKnowledge(input: {
   query: string;
 }): Promise<RetrievedKnowledge> {
   await requireWorkspaceMembership(input.workspaceId, input.userId);
-  if (input.channelId) await canAccessChannel(input.channelId, input.userId);
+  const query = input.query.trim().replace(/\s+/g, " ").slice(0, 200);
+  if (!query)
+    throw new KnowledgeError(
+      "KNOWLEDGE_INVALID_INPUT",
+      "Enter a knowledge search query.",
+    );
+  if (input.channelId) {
+    const channel = await prisma.channel.findUnique({
+      where: { id: input.channelId },
+      select: { workspaceId: true },
+    });
+    if (!channel || channel.workspaceId !== input.workspaceId)
+      throw new KnowledgeError(
+        "KNOWLEDGE_FORBIDDEN",
+        "That channel is outside this workspace.",
+      );
+    await canAccessChannel(input.channelId, input.userId);
+  }
 
   const accessibleChannels = await listAccessibleChannels(
     input.workspaceId,
@@ -62,21 +81,36 @@ export async function retrieveKnowledge(input: {
       text: "No indexed knowledge was found.",
     };
 
-  const embedding = await new OpenAIEmbeddingService().embedMany([input.query]);
   const config = getKnowledgeConfig();
-  const results = deduplicate(
-    (
-      await vectorStore.search({
-        workspaceId: input.workspaceId,
-        channelId: input.channelId,
-        channelIds: accessibleChannelIds,
-        queryVector: embedding.vectors[0]!,
-        limit: config.retrievalLimit * 3,
-      })
+  const searchInput = {
+    workspaceId: input.workspaceId,
+    channelId: input.channelId,
+    channelIds: accessibleChannelIds,
+    query,
+    limit: config.retrievalLimit * 3,
+  };
+  let results: KnowledgeSearchResult[];
+  try {
+    const embedding = await new OpenAIEmbeddingService().embedMany([query]);
+    results = await vectorStore.search({
+      ...searchInput,
+      queryVector: embedding.vectors[0]!,
+    });
+  } catch (error) {
+    if (
+      !(error instanceof KnowledgeError) ||
+      (error.code !== "KNOWLEDGE_NOT_CONFIGURED" &&
+        error.code !== "KNOWLEDGE_PROVIDER_ERROR")
     )
+      throw error;
+    results = await vectorStore.keywordSearch(searchInput);
+  }
+  results = deduplicate(
+    results
       .sort(
         (left, right) =>
-          hybridScore(right, input.query) - hybridScore(left, input.query),
+          hybridScore(right, query) - hybridScore(left, query) ||
+          left.chunkIndex - right.chunkIndex,
       )
       .slice(0, config.retrievalLimit),
   );

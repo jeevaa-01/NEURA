@@ -27,6 +27,7 @@ import {
   notificationIdSchema,
   notificationListSchema,
   notificationPreferencesSchema,
+  activityListSchema,
 } from "./validations";
 
 function invalid(message: string) {
@@ -119,15 +120,16 @@ export async function updateNotificationPreferencesAction(
 }
 
 export async function listActivityAction(
-  input?: unknown,
+  input: unknown = {},
 ): Promise<WorkspaceActionResult<ActivitySummary[]>> {
-  const workspaceId =
-    input && typeof input === "object" && "workspaceId" in input
-      ? String((input as { workspaceId?: unknown }).workspaceId)
-      : undefined;
+  const parsed = activityListSchema.safeParse(input);
+  if (!parsed.success) return invalid("Workspace filters are invalid.");
   try {
     const user = await getAuthenticatedUser();
-    return { ok: true, data: await listActivityFeed(user.id, workspaceId) };
+    return {
+      ok: true,
+      data: await listActivityFeed(user.id, parsed.data.workspaceId),
+    };
   } catch (error) {
     return { ok: false, error: toWorkspaceActionError(error) };
   }

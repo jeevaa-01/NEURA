@@ -12,10 +12,12 @@ const MAX_RECONNECT_DELAY = 30_000;
 
 export function useRealtimeChannel({
   channelId,
+  conversationId,
   onEvent,
   onResync,
 }: {
-  channelId: string;
+  channelId?: string;
+  conversationId?: string;
   onEvent: (event: RealtimeEvent) => void;
   onResync: () => Promise<void>;
 }) {
@@ -34,6 +36,7 @@ export function useRealtimeChannel({
     let closed = false;
     let attempt = 0;
     let connectedOnce = false;
+    let connectionFailed = false;
 
     function clearReconnectTimer() {
       if (reconnectTimer !== null) {
@@ -44,6 +47,7 @@ export function useRealtimeChannel({
 
     function scheduleReconnect() {
       if (closed || reconnectTimer !== null) return;
+      connectionFailed = true;
       const delay = Math.min(
         1_000 * 2 ** Math.min(attempt, 5),
         MAX_RECONNECT_DELAY,
@@ -60,9 +64,10 @@ export function useRealtimeChannel({
       if (closed) return;
       setStatus(attempt ? "reconnecting" : "connecting");
       try {
-        source = new EventSource(
-          `/api/realtime?channelId=${encodeURIComponent(channelId)}`,
-        );
+        const query = channelId
+          ? `channelId=${encodeURIComponent(channelId)}`
+          : `conversationId=${encodeURIComponent(conversationId!)}`;
+        source = new EventSource(`/api/realtime?${query}`);
       } catch {
         scheduleReconnect();
         return;
@@ -72,7 +77,12 @@ export function useRealtimeChannel({
       activeSource.addEventListener("realtime", (event) => {
         try {
           const parsed: unknown = JSON.parse((event as MessageEvent).data);
-          if (isRealtimeEvent(parsed) && parsed.channelId === channelId)
+          if (
+            isRealtimeEvent(parsed) &&
+            (channelId
+              ? parsed.channelId === channelId
+              : parsed.conversationId === conversationId)
+          )
             onEventRef.current(parsed);
         } catch {
           // Ignore malformed server frames and keep the connection alive.
@@ -80,8 +90,9 @@ export function useRealtimeChannel({
       });
       activeSource.onopen = () => {
         if (closed || activeSource !== source) return;
-        const wasReconnect = connectedOnce;
+        const wasReconnect = connectedOnce || connectionFailed;
         connectedOnce = true;
+        connectionFailed = false;
         attempt = 0;
         setStatus("connected");
         if (wasReconnect) void onResyncRef.current();
@@ -103,7 +114,7 @@ export function useRealtimeChannel({
       source = null;
       setStatus("disconnected");
     };
-  }, [channelId]);
+  }, [channelId, conversationId]);
 
   return { status };
 }

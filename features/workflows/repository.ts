@@ -134,6 +134,33 @@ export async function getWorkflowRow(workflowId: string, userId: string) {
   return row ? toWorkflow(row) : null;
 }
 
+export async function updateWorkflowRow(input: {
+  workflowId: string;
+  userId: string;
+  name?: string;
+  description?: string | null;
+  trigger?: WorkflowTriggerType;
+  status?: WorkflowStatus;
+  definition?: WorkflowDefinition;
+}) {
+  const row = await prisma.workflow.updateMany({
+    where: { id: input.workflowId, createdById: input.userId },
+    data: {
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.description !== undefined
+        ? { description: input.description }
+        : {}),
+      ...(input.trigger !== undefined ? { trigger: input.trigger } : {}),
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.definition !== undefined
+        ? { configuration: jsonValue(input.definition) }
+        : {}),
+    },
+  });
+  if (row.count !== 1) return null;
+  return getWorkflowRow(input.workflowId, input.userId);
+}
+
 export async function listWorkflowRows(userId: string, workspaceId: string) {
   const rows = await prisma.workflow.findMany({
     where: { createdById: userId, workspaceId },

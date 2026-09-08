@@ -1,6 +1,8 @@
 import { requireWorkspaceMembership } from "@/features/workspaces";
 
 import { proposeAIAction } from "./action-service";
+import { requireAIConversation } from "./conversation-service";
+import { enforceAIRateLimit } from "./rate-limit";
 import { executeAITool, getAITool } from "./tools";
 import type { AIActionSummary } from "../types";
 
@@ -21,6 +23,13 @@ export async function runSequentialAutomation(input: {
   steps: AutomationStep[];
 }) {
   await requireWorkspaceMembership(input.workspaceId, input.userId);
+  await enforceAIRateLimit(input.userId, input.workspaceId);
+  if (input.conversationId)
+    await requireAIConversation(
+      input.conversationId,
+      input.userId,
+      input.workspaceId,
+    );
   if (input.steps.length === 0 || input.steps.length > MAX_AUTOMATION_STEPS)
     throw new Error(
       `Automation plans must contain 1-${MAX_AUTOMATION_STEPS} steps.`,

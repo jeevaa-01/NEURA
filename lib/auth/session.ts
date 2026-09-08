@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
+import { prisma } from "@/lib/db/client";
 import { APP_ROUTE, LOGIN_ROUTE, REDIRECT_PARAM } from "@/lib/constants/routes";
 
 import { auth, type Session, type SessionUser } from "./auth";
@@ -13,14 +14,28 @@ import { auth, type Session, type SessionUser } from "./auth";
  * `getSession` is wrapped in React's `cache`, so a render pass that asks two or
  * three times — a layout, a page and a component — still costs one lookup.
  *
- * The lookup itself is cheap: Better Auth's signed cookie cache answers most
- * calls without touching PostgreSQL, and falls back to the `sessions` table
- * when the cache is stale or absent.
+ * The lookup always consults the authoritative `sessions` table. This is
+ * deliberate: a signed cookie cache can outlive a revoked session for its
+ * cache lifetime.
  */
 
 /** Returns the current session, or `null` when the visitor is anonymous. */
 export const getSession = cache(async (): Promise<Session | null> => {
-  return auth.api.getSession({ headers: await headers() });
+  const session = await auth.api.getSession({
+    headers: await headers(),
+    query: { disableCookieCache: true },
+  });
+  if (!session) return null;
+
+  // `isActive` is a NEURA field and is intentionally not copied into Better
+  // Auth's session payload. Re-check it here so deactivation immediately
+  // invalidates every protected page and server action, even while a signed
+  // session cookie remains valid.
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { isActive: true },
+  });
+  return user?.isActive ? session : null;
 });
 
 /** Returns the signed-in user, or `null`. */

@@ -16,7 +16,8 @@ export const messageContentSchema = z
 
 export const createMessageSchema = z
   .object({
-    channelId: uuid,
+    channelId: uuid.optional(),
+    conversationId: uuid.optional(),
     content: z
       .string()
       .trim()
@@ -30,6 +31,10 @@ export const createMessageSchema = z
     attachmentIds: z.array(uuid).max(10).optional(),
   })
   .refine(
+    (value) => Boolean(value.channelId) !== Boolean(value.conversationId),
+    { message: "Choose one message destination." },
+  )
+  .refine(
     (value) =>
       value.content.trim().length > 0 || Boolean(value.attachmentIds?.length),
     { message: "Add a message or attach a file.", path: ["content"] },
@@ -42,11 +47,17 @@ export const updateMessageSchema = z.object({
 
 export const messageIdSchema = uuid;
 
-export const messageHistorySchema = z.object({
-  channelId: uuid,
-  cursor: z.string().max(300).nullable().optional(),
-  limit: z.coerce.number().int().min(1).max(50).optional(),
-});
+export const messageHistorySchema = z
+  .object({
+    channelId: uuid.optional(),
+    conversationId: uuid.optional(),
+    cursor: z.string().max(300).nullable().optional(),
+    limit: z.coerce.number().int().min(1).max(50).optional(),
+  })
+  .refine(
+    (value) => Boolean(value.channelId) !== Boolean(value.conversationId),
+    { message: "Choose one message destination." },
+  );
 
 export const threadSchema = z.object({
   parentId: uuid,
@@ -78,7 +89,12 @@ export const searchMessagesSchema = z.object({
   cursor: z.string().max(300).nullable().optional(),
 });
 
-export const readStateSchema = z.object({ channelId: uuid });
+export const readStateSchema = z
+  .object({ channelId: uuid.optional(), conversationId: uuid.optional() })
+  .refine(
+    (value) => Boolean(value.channelId) !== Boolean(value.conversationId),
+    { message: "Choose one message destination." },
+  );
 
 export type CreateMessageInput = z.infer<typeof createMessageSchema>;
 export type UpdateMessageInput = z.infer<typeof updateMessageSchema>;

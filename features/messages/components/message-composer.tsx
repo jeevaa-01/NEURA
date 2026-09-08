@@ -5,13 +5,15 @@ import { useEffect, useRef, useState } from "react";
 
 export function MessageComposer({
   channelId,
+  allowAttachments = true,
   onSubmit,
   onTyping,
   disabled = false,
   placeholder = "Write a message...",
   submitLabel = "Send",
 }: {
-  channelId: string;
+  channelId?: string;
+  allowAttachments?: boolean;
   onSubmit: (content: string, attachmentIds: string[]) => Promise<void>;
   onTyping?: (isTyping: boolean) => void;
   disabled?: boolean;
@@ -66,7 +68,7 @@ export function MessageComposer({
     try {
       setFileError(null);
       let attachmentIds: string[] = [];
-      if (files.length) {
+      if (files.length && channelId) {
         const form = new FormData();
         form.append("channelId", channelId);
         files.forEach((file) => form.append("files", file));
@@ -166,34 +168,36 @@ export function MessageComposer({
       )}
       <div className="mt-2 flex items-center justify-between gap-3 border-t border-border-subtle pt-2">
         <div className="flex items-center gap-2">
-          <label className="focus-ring inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-[10px] text-text-muted hover:bg-surface-hover hover:text-text-primary">
-            <FilePlus2 aria-hidden className="size-3.5" /> Attach
-            <input
-              type="file"
-              multiple
-              className="sr-only"
-              disabled={disabled || pending}
-              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
-              onChange={(event) => {
-                const selected = Array.from(event.target.files ?? []);
-                setFileError(null);
-                if (selected.some((file) => file.size > 25 * 1024 * 1024)) {
-                  setFileError("Files must be smaller than 25 MB.");
-                  return;
-                }
-                if (
-                  selected.length > 10 ||
-                  selected.reduce((sum, file) => sum + file.size, 0) >
-                    50 * 1024 * 1024
-                ) {
-                  setFileError("Choose up to 10 files totaling 50 MB.");
-                  return;
-                }
-                setFiles((current) => [...current, ...selected].slice(0, 10));
-                event.target.value = "";
-              }}
-            />
-          </label>
+          {allowAttachments && (
+            <label className="focus-ring inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-[10px] text-text-muted hover:bg-surface-hover hover:text-text-primary">
+              <FilePlus2 aria-hidden className="size-3.5" /> Attach
+              <input
+                type="file"
+                multiple
+                className="sr-only"
+                disabled={disabled || pending}
+                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+                onChange={(event) => {
+                  const selected = Array.from(event.target.files ?? []);
+                  setFileError(null);
+                  if (selected.some((file) => file.size > 25 * 1024 * 1024)) {
+                    setFileError("Files must be smaller than 25 MB.");
+                    return;
+                  }
+                  if (
+                    selected.length > 10 ||
+                    selected.reduce((sum, file) => sum + file.size, 0) >
+                      50 * 1024 * 1024
+                  ) {
+                    setFileError("Choose up to 10 files totaling 50 MB.");
+                    return;
+                  }
+                  setFiles((current) => [...current, ...selected].slice(0, 10));
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          )}
           <p className="hidden text-[10px] text-text-muted sm:block">
             Enter to send · Shift+Enter for a new line
           </p>

@@ -1,6 +1,7 @@
 "use server";
 
 import { getChannelReadState } from "../services/message-service";
+import { getConversationReadState } from "../services/conversation-service";
 import { readStateSchema } from "../validations/message-schema";
 import type { MessageReadState } from "../types";
 import type { WorkspaceActionResult } from "@/features/workspaces/types";
@@ -22,7 +23,9 @@ export async function getReadStateAction(
     const user = await getAuthenticatedUser();
     return {
       ok: true,
-      data: await getChannelReadState(parsed.data.channelId, user.id),
+      data: parsed.data.conversationId
+        ? await getConversationReadState(parsed.data.conversationId, user.id)
+        : await getChannelReadState(parsed.data.channelId!, user.id),
     };
   } catch (error) {
     return { ok: false, error: toWorkspaceActionError(error) };

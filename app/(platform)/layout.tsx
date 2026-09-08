@@ -2,8 +2,11 @@ import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { getUserWorkspaces } from "@/features/workspaces/queries/get-user-workspaces";
+import { listFavoriteChannels } from "@/features/favorites/services/favorite-service";
+import { listDirectConversations } from "@/features/messages/services/conversation-service";
 import { requireSession } from "@/lib/auth";
 import { APP_ROUTE } from "@/lib/constants";
+import { prisma } from "@/lib/db/client";
 
 /**
  * Chrome for authenticated product routes (workspaces, channels, messages).
@@ -27,18 +30,33 @@ export default async function PlatformLayout({
 }) {
   const session = await requireSession(APP_ROUTE);
   const { user } = session;
-  const workspaces = await getUserWorkspaces(user.id);
+  const [workspaces, favorites, conversations, profile] = await Promise.all([
+    getUserWorkspaces(user.id),
+    listFavoriteChannels(user.id),
+    listDirectConversations(user.id),
+    prisma.user.findUniqueOrThrow({
+      where: { id: user.id },
+      select: {
+        displayName: true,
+        username: true,
+        email: true,
+        avatarUrl: true,
+      },
+    }),
+  ]);
 
   return (
     <div className="dark flex flex-1 flex-col bg-background text-foreground">
       <AppShell
         user={{
-          name: user.name,
-          username: user.username,
-          email: user.email,
-          image: user.image,
+          name: profile.displayName,
+          username: profile.username,
+          email: profile.email,
+          image: profile.avatarUrl,
         }}
         workspaces={workspaces}
+        favorites={favorites}
+        conversations={conversations}
       >
         {children}
       </AppShell>

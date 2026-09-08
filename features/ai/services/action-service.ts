@@ -16,8 +16,13 @@ import { getChannelById } from "@/features/workspaces/services/channel-service";
 import { WorkspaceError } from "@/features/workspaces/services/errors";
 
 import { AIError } from "./ai-errors";
-import { executeAIToolForAction, getAITool } from "./tools";
+import {
+  executeAIToolForAction,
+  getAITool,
+  validateAIToolInput,
+} from "./tools";
 import { recordAIAudit } from "./audit-service";
+import { requireAIConversation } from "./conversation-service";
 import type { AIActionResult, AIActionSummary } from "../types";
 import { emitApplicationEvent } from "@/features/notifications";
 
@@ -203,6 +208,21 @@ export async function proposeAIAction(input: {
   if (!parsed.success)
     throw new AIError("AI_TOOL_ERROR", "The action arguments are invalid.");
   const payload = parsed.data as Record<string, unknown>;
+  if (input.conversationId)
+    await requireAIConversation(
+      input.conversationId,
+      input.userId,
+      input.workspaceId,
+    );
+  await validateAIToolInput(
+    input.toolName,
+    {
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+    },
+    payload,
+  );
   const existingKey = input.idempotencyKey?.trim() || randomUUID();
   if (existingKey.length > 120)
     throw new AIError(
@@ -275,6 +295,7 @@ async function ownedAction(actionId: string, userId: string) {
   });
   if (!row)
     throw new AIError("AI_NOT_FOUND", "That action could not be found.");
+  await requireWorkspaceMembership(row.workspaceId, userId);
   if (
     row.expiresAt &&
     row.expiresAt < new Date() &&
@@ -320,12 +341,37 @@ export async function confirmAIAction(
       "AI_INVALID_INPUT",
       "That action is not awaiting confirmation.",
     );
-  await requireWorkspaceMembership(row.workspaceId, userId);
-  const updated = await prisma.aIAction.update({
-    where: { id: row.id },
+  // Confirmation is a security boundary, not merely a UI acknowledgement.
+  // Re-check the stored payload against the current session and permissions so
+  // a role, membership, or channel change cannot be bypassed by an old prompt.
+  await validateAIToolInput(
+    row.toolName,
+    {
+      userId,
+      workspaceId: row.workspaceId,
+      conversationId: row.conversationId ?? undefined,
+    },
+    row.inputPayload,
+  );
+  const claimed = await prisma.aIAction.updateMany({
+    where: {
+      id: row.id,
+      userId,
+      status: {
+        in: [AIActionStatus.AWAITING_CONFIRMATION, AIActionStatus.PROPOSED],
+      },
+    },
     data: { status: AIActionStatus.APPROVED, confirmationAt: new Date() },
-    select: actionSelect,
   });
+  if (claimed.count !== 1) {
+    const current = await ownedAction(actionId, userId);
+    if (current.status === AIActionStatus.SUCCEEDED) return toSummary(current);
+    throw new AIError(
+      "AI_INVALID_INPUT",
+      "That action is no longer awaiting confirmation.",
+    );
+  }
+  const updated = await ownedAction(actionId, userId);
   await audit(
     userId,
     row.workspaceId,
@@ -347,15 +393,42 @@ export async function cancelAIAction(
     new Set<AIActionStatus>([
       AIActionStatus.SUCCEEDED,
       AIActionStatus.FAILED,
+      AIActionStatus.CANCELLED,
       AIActionStatus.EXPIRED,
     ]).has(row.status)
   )
     return toSummary(row);
-  const updated = await prisma.aIAction.update({
-    where: { id: row.id },
+  const claimed = await prisma.aIAction.updateMany({
+    where: {
+      id: row.id,
+      userId,
+      status: {
+        in: [
+          AIActionStatus.PROPOSED,
+          AIActionStatus.AWAITING_CONFIRMATION,
+          AIActionStatus.APPROVED,
+        ],
+      },
+    },
     data: { status: AIActionStatus.CANCELLED },
-    select: actionSelect,
   });
+  if (claimed.count !== 1) {
+    const current = await ownedAction(actionId, userId);
+    if (
+      new Set<AIActionStatus>([
+        AIActionStatus.SUCCEEDED,
+        AIActionStatus.FAILED,
+        AIActionStatus.CANCELLED,
+        AIActionStatus.EXPIRED,
+      ]).has(current.status)
+    )
+      return toSummary(current);
+    throw new AIError(
+      "AI_INVALID_INPUT",
+      "That action is already being executed and cannot be cancelled.",
+    );
+  }
+  const updated = await ownedAction(actionId, userId);
   await audit(
     userId,
     row.workspaceId,

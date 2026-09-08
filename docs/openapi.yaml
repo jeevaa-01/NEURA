@@ -1,0 +1,504 @@
+openapi: 3.1.0
+info:
+  title: NEURA HTTP API
+  version: 0.1.0
+  description: >-
+    Contract for the HTTP route handlers exposed by NEURA. Most authenticated
+    domain mutations use Server Actions; see server-actions.md.
+servers:
+  - url: http://localhost:3000
+    description: Local development only
+tags:
+  - name: Authentication
+  - name: Health
+  - name: Search
+  - name: AI
+  - name: Files
+  - name: Account
+  - name: Realtime
+paths:
+  /api/auth/{authPath}:
+    parameters:
+      - name: authPath
+        in: path
+        required: true
+        description: Better Auth operation path, such as sign-in/email or get-session.
+        schema: { type: string }
+    get:
+      tags: [Authentication]
+      summary: Better Auth GET operation
+      description: Delegated to Better Auth. The available operation set is library-defined.
+      responses:
+        "200": { description: Better Auth response }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Authentication]
+      summary: Better Auth POST operation
+      description: Credential operations are rate-limited before delegation where configured.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            { schema: { type: object, additionalProperties: true } }
+      responses:
+        "200": { description: Better Auth response }
+        "201": { description: Better Auth response }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Check application dependencies
+      security: []
+      responses:
+        "200":
+          description: Online or degraded; the body identifies each dependency.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthReport" }
+        "503":
+          description: Both checked dependencies are unavailable.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthReport" }
+
+  /api/search:
+    get:
+      tags: [Search]
+      summary: Search authorized NEURA content
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/Query" }
+        - name: type
+          in: query
+          schema:
+            {
+              type: string,
+              enum:
+                [
+                  all,
+                  messages,
+                  threads,
+                  channels,
+                  people,
+                  files,
+                  knowledge,
+                  tasks,
+                ],
+            }
+        - { $ref: "#/components/parameters/WorkspaceId" }
+        - { $ref: "#/components/parameters/ChannelId" }
+        - name: userId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          schema: { type: string, maxLength: 40 }
+        - name: to
+          in: query
+          schema: { type: string, maxLength: 40 }
+        - { $ref: "#/components/parameters/Cursor" }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        "200":
+          description: Workspace and channel-authorized search results.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
+  /api/ai/chat:
+    post:
+      tags: [AI]
+      summary: Stream a governed AI response
+      security: [{ sessionCookie: [] }]
+      description: >-
+        The request is authenticated and workspace/channel access is checked
+        before an SSE response is opened. Each response record is emitted as
+        event `ai`; event payloads are provider/runtime-defined objects.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AIChatRequest" }
+      responses:
+        "200":
+          description: AI stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+              examples:
+                event: { value: "event: ai\ndata: {\"type\":\"...\"}\n\n" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "502": { $ref: "#/components/responses/ProviderError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/files/upload:
+    post:
+      tags: [Files]
+      summary: Upload channel attachments
+      security: [{ sessionCookie: [] }]
+      description: Channel access is checked and each file is validated by type, extension, signature, and configured size limits.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [channelId, files]
+              properties:
+                channelId: { type: string, format: uuid }
+                files:
+                  type: array
+                  maxItems: 10
+                  items: { type: string, format: binary }
+      responses:
+        "201":
+          description: Uploaded attachment metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [attachments]
+                properties:
+                  attachments:
+                    type: array
+                    items: { $ref: "#/components/schemas/Attachment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/files/{attachmentId}:
+    get:
+      tags: [Files]
+      summary: Download an authorized attachment
+      security: [{ sessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/AttachmentId" }]
+      responses:
+        "200":
+          description: Private attachment bytes. Content-Type is the stored validated MIME type.
+          headers:
+            Content-Disposition: { schema: { type: string } }
+          content:
+            application/octet-stream:
+              { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            image/gif: { schema: { type: string, format: binary } }
+            application/pdf: { schema: { type: string, format: binary } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/files/{attachmentId}/retry:
+    post:
+      tags: [Files]
+      summary: Retry attachment indexing
+      security: [{ sessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/AttachmentId" }]
+      responses:
+        "200": { description: Updated attachment/source result }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/account/avatar:
+    post:
+      tags: [Account]
+      summary: Replace the authenticated user's avatar
+      security: [{ sessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: New private avatar reference.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [avatarUrl]
+                properties: { avatarUrl: { type: string, nullable: true } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+    delete:
+      tags: [Account]
+      summary: Remove the authenticated user's avatar
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Avatar removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [avatarUrl]
+                properties:
+                  { avatarUrl: { type: string, nullable: true, example: null } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/account/avatar/{avatarId}:
+    get:
+      tags: [Account]
+      summary: Retrieve the authenticated user's private avatar
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: avatarId
+          in: path
+          required: true
+          description: UUID version plus a supported image extension.
+          schema:
+            {
+              type: string,
+              pattern: '^[0-9a-f-]{36}\.(gif|jpeg|jpg|png|webp)$',
+            }
+      responses:
+        "200":
+          description: Private avatar bytes.
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            image/gif: { schema: { type: string, format: binary } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/realtime:
+    get:
+      tags: [Realtime]
+      summary: Subscribe to an authorized channel or conversation stream
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - name: channelId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: conversationId
+          in: query
+          schema: { type: string, format: uuid }
+      description: Exactly one of channelId or conversationId is required. Channel/private-conversation access is rechecked server-side.
+      responses:
+        "200":
+          description: SSE realtime stream with heartbeat and `realtime` events.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /api/realtime/notifications:
+    get:
+      tags: [Realtime]
+      summary: Subscribe to the authenticated user's notification stream
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: SSE user notification stream with heartbeat and `notification` events.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: neura.session_token
+      description: Better Auth session cookie; exact secure attributes depend on the deployment origin.
+  parameters:
+    Query:
+      name: q
+      in: query
+      required: true
+      schema: { type: string, minLength: 2, maxLength: 200 }
+    WorkspaceId:
+      name: workspaceId
+      in: query
+      schema: { type: string, format: uuid }
+    ChannelId:
+      name: channelId
+      in: query
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string, maxLength: 500 }
+    AttachmentId:
+      name: attachmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Invalid input or operation-specific failure.
+      content:
+        { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Unauthorized:
+      description: No active authenticated session.
+      content:
+        { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Forbidden:
+      description: Authenticated but not authorized for the requested scope.
+      content:
+        { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: Resource is missing or intentionally hidden by authorization.
+      content:
+        { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    RateLimited:
+      description: Centralized Redis-backed rate limit exceeded.
+      headers: { Retry-After: { schema: { type: integer } } }
+      content:
+        { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    ProviderError:
+      description: AI provider or governed runtime failure.
+      content:
+        {
+          application/json:
+            { schema: { $ref: "#/components/schemas/AIError" } },
+        }
+    ServiceUnavailable:
+      description: Dependency or security service unavailable.
+      content:
+        { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    ServerError:
+      description: Redacted server-side failure.
+      content:
+        { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    AIError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties: { code: { type: string } }
+    HealthReport:
+      type: object
+      required: [status, timestamp, services]
+      properties:
+        status: { type: string, enum: [online, degraded, offline] }
+        timestamp: { type: string, format: date-time }
+        services:
+          type: object
+          required: [database, redis]
+          properties:
+            database: { $ref: "#/components/schemas/DependencyStatus" }
+            redis: { $ref: "#/components/schemas/DependencyStatus" }
+    DependencyStatus:
+      type: object
+      required: [ok, latencyMs]
+      properties:
+        ok: { type: boolean }
+        latencyMs: { type: number, nullable: true }
+    AIChatRequest:
+      type: object
+      required: [workspaceId, contextMode, content]
+      properties:
+        workspaceId: { type: string, format: uuid }
+        conversationId: { type: string, format: uuid, nullable: true }
+        channelId: { type: string, format: uuid, nullable: true }
+        contextMode: { type: string, enum: [conversation, channel, workspace] }
+        content: { type: string, minLength: 1, maxLength: 4000 }
+    Attachment:
+      type: object
+      required: [id, fileName, mimeType, size, status, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        fileName: { type: string }
+        mimeType: { type: string }
+        size: { type: integer, minimum: 0 }
+        status:
+          { type: string, enum: [PENDING, PROCESSING, READY, FAILED, DELETED] }
+        errorMessage: { type: string, nullable: true }
+        messageId: { type: string, format: uuid, nullable: true }
+        workspaceId: { type: string, format: uuid, nullable: true }
+        channelId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SearchResponse:
+      type: object
+      required: [query, items, nextCursor, hasMore]
+      properties:
+        query: { type: string }
+        items:
+          { type: array, items: { $ref: "#/components/schemas/SearchResult" } }
+        nextCursor: { type: string, nullable: true }
+        hasMore: { type: boolean }
+    SearchResult:
+      type: object
+      required:
+        [
+          id,
+          type,
+          title,
+          snippet,
+          timestamp,
+          workspace,
+          channel,
+          author,
+          relevance,
+          href,
+          metadata,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          {
+            type: string,
+            enum:
+              [
+                message,
+                thread,
+                channel,
+                person,
+                file,
+                knowledge,
+                task,
+                workspace,
+              ],
+          }
+        title: { type: string }
+        snippet: { type: string }
+        timestamp: { type: string, format: date-time, nullable: true }
+        workspace: { type: object, nullable: true, additionalProperties: true }
+        channel: { type: object, nullable: true, additionalProperties: true }
+        author: { type: object, nullable: true, additionalProperties: true }
+        relevance: { type: number }
+        href: { type: string }
+        metadata: { type: object, additionalProperties: true }

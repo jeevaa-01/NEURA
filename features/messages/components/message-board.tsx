@@ -17,6 +17,7 @@ import { markChannelReadAction } from "../actions/mark-channel-read";
 import { removeReactionAction } from "../actions/remove-reaction";
 import { searchMessagesAction } from "../actions/search-messages";
 import { updateMessageAction } from "../actions/update-message";
+import { mergeMessageCollections } from "../message-collection";
 import type {
   MessageHistory,
   MessageReadState,
@@ -49,7 +50,9 @@ export function MessageBoard({
   initialReadState: MessageReadState;
   initialMessageId?: string;
 }) {
-  const [messages, setMessages] = useState(initialHistory.items);
+  const [messages, setMessages] = useState(() =>
+    mergeMessageCollections([], initialHistory.items),
+  );
   const [nextCursor, setNextCursor] = useState(initialHistory.nextCursor);
   const [readState, setReadState] = useState(initialReadState);
   const [thread, setThread] = useState<MessageThread | null>(null);
@@ -64,7 +67,7 @@ export function MessageBoard({
   const typingTimersRef = useRef(new Map<string, number>());
   const pendingReactionsRef = useRef(new Set<string>());
   const seenEventIdsRef = useRef(new Set<string>());
-  const createdMessageIdsRef = useRef(new Set<string>());
+  const handledReplyIdsRef = useRef(new Set<string>());
   const openedInitialMessageRef = useRef<string | null>(null);
 
   async function resync() {
@@ -73,7 +76,9 @@ export function MessageBoard({
       getReadStateAction({ channelId }),
     ]);
     if (historyResult.ok) {
-      setMessages(historyResult.data.items);
+      setMessages((current) =>
+        mergeMessageCollections(current, historyResult.data.items),
+      );
       setNextCursor(historyResult.data.nextCursor);
     } else {
       setStatus(historyResult.error.message);
@@ -125,13 +130,18 @@ export function MessageBoard({
             ),
           };
     }
-    setMessages((current) => current.map(update));
+    setMessages((current) =>
+      mergeMessageCollections(current, current.map(update)),
+    );
     setThread(
       (current) =>
         current && {
           ...current,
           parent: update(current.parent),
-          replies: current.replies.map(update),
+          replies: mergeMessageCollections(
+            current.replies,
+            current.replies.map(update),
+          ),
         },
     );
   }
@@ -163,7 +173,7 @@ export function MessageBoard({
       case "message.created":
         if (event.payload.message.parentId === null)
           setMessages((current) =>
-            upsertMessage(current, event.payload.message),
+            mergeMessageCollections(current, [event.payload.message]),
           );
         break;
       case "message.updated":
@@ -173,15 +183,18 @@ export function MessageBoard({
       case "thread.reply.created": {
         const reply = event.payload.message;
         if (reply.parentId) {
-          const createdLocally = createdMessageIdsRef.current.has(reply.id);
-          if (createdLocally) createdMessageIdsRef.current.delete(reply.id);
+          const alreadyHandled = handledReplyIdsRef.current.has(reply.id);
+          handledReplyIdsRef.current.add(reply.id);
           setMessages((current) =>
-            createdLocally
-              ? current
-              : current.map((message) =>
-                  message.id === reply.parentId
-                    ? { ...message, replyCount: message.replyCount + 1 }
-                    : message,
+            alreadyHandled
+              ? mergeMessageCollections(current, [])
+              : mergeMessageCollections(
+                  current,
+                  current.map((message) =>
+                    message.id === reply.parentId
+                      ? { ...message, replyCount: message.replyCount + 1 }
+                      : message,
+                  ),
                 ),
           );
           setThread((current) => {
@@ -189,9 +202,7 @@ export function MessageBoard({
               return current;
             return {
               ...current,
-              replies: createdLocally
-                ? current.replies
-                : upsertMessage(current.replies, reply),
+              replies: mergeMessageCollections(current.replies, [reply]),
             };
           });
         }
@@ -206,7 +217,7 @@ export function MessageBoard({
         updateReactionEverywhere(
           messageId,
           emoji,
-          event.type === "reaction.added",
+          event.type === "reaction.removed",
         );
         break;
       }
@@ -270,15 +281,23 @@ export function MessageBoard({
 
   function updateMessageEverywhere(updated: MessageSummary) {
     setMessages((current) =>
-      current.map((message) => (message.id === updated.id ? updated : message)),
+      mergeMessageCollections(
+        current,
+        current.map((message) =>
+          message.id === updated.id ? updated : message,
+        ),
+      ),
     );
     setThread((current) => {
       if (!current) return current;
       return {
         ...current,
         parent: current.parent.id === updated.id ? updated : current.parent,
-        replies: current.replies.map((message) =>
-          message.id === updated.id ? updated : message,
+        replies: mergeMessageCollections(
+          current.replies,
+          current.replies.map((message) =>
+            message.id === updated.id ? updated : message,
+          ),
         ),
       };
     });
@@ -301,27 +320,29 @@ export function MessageBoard({
       throw new Error(result.error.message);
     }
     if (parentId) {
-      const alreadyHandled = createdMessageIdsRef.current.has(result.data.id);
-      createdMessageIdsRef.current.add(result.data.id);
-      if (!alreadyHandled)
-        setThread(
-          (current) =>
-            current && {
-              ...current,
-              replies: upsertMessage(current.replies, result.data),
-            },
-        );
+      const alreadyHandled = handledReplyIdsRef.current.has(result.data.id);
+      handledReplyIdsRef.current.add(result.data.id);
+      setThread(
+        (current) =>
+          current && {
+            ...current,
+            replies: mergeMessageCollections(current.replies, [result.data]),
+          },
+      );
       setMessages((current) =>
         alreadyHandled
-          ? current
-          : current.map((message) =>
-              message.id === parentId
-                ? { ...message, replyCount: message.replyCount + 1 }
-                : message,
+          ? mergeMessageCollections(current, [])
+          : mergeMessageCollections(
+              current,
+              current.map((message) =>
+                message.id === parentId
+                  ? { ...message, replyCount: message.replyCount + 1 }
+                  : message,
+              ),
             ),
       );
     } else {
-      setMessages((current) => [...current, result.data]);
+      setMessages((current) => mergeMessageCollections(current, [result.data]));
     }
     setReadState((current) => ({
       ...current,
@@ -380,7 +401,12 @@ export function MessageBoard({
       setStatus(result.error.message);
       return;
     }
-    setThread(result.data);
+    for (const reply of result.data.replies)
+      handledReplyIdsRef.current.add(reply.id);
+    setThread({
+      ...result.data,
+      replies: mergeMessageCollections([], result.data.replies),
+    });
   }
 
   useEffect(() => {
@@ -396,6 +422,10 @@ export function MessageBoard({
     return () => window.clearTimeout(timer);
   }, [initialMessageId, messages]);
 
+  // Keep rendering defensive for state restored during a hot reload. All
+  // normal writes already go through mergeMessageCollections.
+  const renderMessages = mergeMessageCollections(messages, []);
+
   async function loadOlder() {
     if (!nextCursor) return;
     setBusy(true);
@@ -409,7 +439,9 @@ export function MessageBoard({
       setStatus(result.error.message);
       return;
     }
-    setMessages((current) => [...result.data.items, ...current]);
+    setMessages((current) =>
+      mergeMessageCollections(current, result.data.items),
+    );
     setNextCursor(result.data.nextCursor);
   }
 
@@ -569,8 +601,8 @@ export function MessageBoard({
             </button>
           )}
           <div className="min-h-56 flex-1 divide-y divide-border-subtle">
-            {messages.length ? (
-              messages.map((message) => (
+            {renderMessages.length ? (
+              renderMessages.map((message) => (
                 <MessageCard
                   key={message.id}
                   message={message}
@@ -646,16 +678,4 @@ function formatSearchTime(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function upsertMessage(current: MessageSummary[], incoming: MessageSummary) {
-  const next = current.some((message) => message.id === incoming.id)
-    ? current.map((message) =>
-        message.id === incoming.id ? incoming : message,
-      )
-    : [...current, incoming];
-  return next.sort((left, right) => {
-    const time = left.createdAt.localeCompare(right.createdAt);
-    return time || left.id.localeCompare(right.id);
-  });
 }

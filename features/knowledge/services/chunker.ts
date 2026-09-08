@@ -47,6 +47,7 @@ export function chunkDocument(text: string): TextChunk[] {
   for (const paragraph of paragraphs) {
     if (paragraph.length > config.chunkSize) {
       flush();
+      current = "";
       chunks.push(...splitLongParagraph(paragraph, config.chunkSize, overlap));
       continue;
     }

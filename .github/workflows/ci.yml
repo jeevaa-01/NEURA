@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: neura-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: neura
+          POSTGRES_PASSWORD: neura_ci_password
+          POSTGRES_DB: neura
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U neura -d neura"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://neura:neura_ci_password@localhost:5432/neura?schema=public
+      REDIS_URL: redis://localhost:6379
+      BETTER_AUTH_SECRET: ci-only-secret-that-is-never-used-in-production-32
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_NAME: NEURA
+      EMAIL_PROVIDER: console
+      FILE_STORAGE_ROOT: ./storage
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run db:generate
+      - run: npm run db:deploy
+      - run: npx prisma validate --config prisma7.config.ts
+      - run: npm run build
+      - run: npm run test:e2e:install
+      - run: npm run start > /tmp/neura.log 2>&1 &
+      - run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/api/health > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/neura.log
+          exit 1
+      - run: RUN_E2E=1 npm run test:e2e

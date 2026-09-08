@@ -3,9 +3,8 @@
 Phase 3. Email + password authentication built on **Better Auth 1.7.2**, backed
 by the existing PostgreSQL database and Prisma 7 client.
 
-Scope: registration, sign-in, sign-out, session management and route
-protection. OAuth, email verification delivery and password reset delivery are
-explicitly out of scope — §9, §10 and §11 explain where each one plugs in.
+Scope: registration, sign-in, sign-out, password reset, session security and
+route protection. OAuth and email verification enforcement remain out of scope.
 
 ---
 
@@ -85,7 +84,7 @@ their defaults — they are NEURA's, not the auth library's.
 | --- | --- |
 | `accounts` | One row per authentication method. Email + password is a single row with `provider_id = "credential"` and the password hash in `password`. OAuth adds rows here with **no schema change**. |
 | `sessions` | One row per signed-in device. Unique `token`, `expires_at`, plus `ip_address` / `user_agent`. |
-| `verifications` | Short-lived tokens for email verification and password reset. Unused this phase; created now so the email phase is a configuration change, not a migration. |
+| `verifications` | Short-lived, single-use tokens for email verification and password reset. |
 
 Both `accounts.user_id` and `sessions.user_id` are `ON DELETE CASCADE`:
 deleting a user removes their credentials and sessions. (In practice users are
@@ -250,6 +249,9 @@ group, and nested pages reuse the cached result.
 | --- | --- | --- |
 | `BETTER_AUTH_SECRET` | **Yes** | Signs session cookies and verification tokens. Minimum 32 characters. |
 | `BETTER_AUTH_URL` | No | Auth origin. Defaults to `NEXT_PUBLIC_APP_URL`, correct for single-origin deployments. |
+| `EMAIL_PROVIDER` | No | `console` for local private `.eml` files; use `resend` in production. |
+| `EMAIL_FROM` | Production with Resend | Verified sender address for account email. |
+| `RESEND_API_KEY` | Production with Resend | Server-only Resend credential. |
 
 Generate the secret with:
 
@@ -293,16 +295,26 @@ first meeting real traffic:
 | Global | 100 requests / 60s |
 | `/sign-in/email` | **5 / 60s** |
 | `/sign-up/email` | **5 / 300s** |
+| `/request-password-reset` | **5 / 300s** |
+| `/reset-password` | **5 / 300s** |
+| `/change-password` | **5 / 300s** |
+| `/update-user` | **10 / 300s** |
+| `/delete-user` | **3 / 300s** |
 
-Storage is `memory`, therefore **per process**. It blunts brute force against a
-single instance but is not a distributed guarantee: with several instances
-behind a load balancer an attacker gets the budget multiplied by the instance
-count.
+Better Auth's built-in storage remains `memory`, therefore **per process**. It
+still provides a useful defense-in-depth credential budget, but is not the
+distributed boundary. The `/api/auth/*` wrapper now adds a Redis-backed outer
+budget keyed by the trusted proxy's hashed client address. Authentication,
+password changes, verification, account deactivation, AI, and realtime
+connection limits fail closed when Redis is unavailable; search and file
+processing continue with a bounded warning because they are non-critical to
+account security.
 
-Phase 17 adds a shared Redis limiter to expensive authenticated search and file
-upload endpoints. Better Auth's own limiter remains in-memory because it is
-owned by the auth library; it still provides a useful per-process credential
-brute-force budget but is not a distributed guarantee.
+The shared limiter uses one Redis Lua operation for `INCR` plus first-write
+`EXPIRE`, so every key receives a bounded TTL and concurrent application
+instances share the same counter. Address headers must be set by a trusted
+reverse proxy; deployments that do not have one should configure that proxy
+before exposing authentication to the public internet.
 
 ---
 
@@ -354,22 +366,24 @@ because `users.username` is `NOT NULL` and unique.
 
 ---
 
-## 11. Future password reset and email verification
+## 11. Password reset and email verification
 
-Both are blocked on one missing capability: **sending email**. Neither is
-started, deliberately — a reset flow with no delivery mechanism is a way to lock
-users out, not a feature.
+Password reset is implemented through Better Auth. The request endpoint always
+returns a generic response, reset tokens are stored in `verifications`, expire
+after one hour, and are consumed once. A successful reset also revokes the
+user's existing sessions.
 
 The `verifications` table already exists and is the token store for both.
 
-**Password reset:** set `emailAndPassword.sendResetPassword` and add a
-`/reset-password` page. Better Auth supplies the token generation, expiry and
-consumption; `revokeSessionsOnPasswordReset: true` should be turned on at the
-same time so a reset kills existing sessions.
+**Password reset delivery:** local development writes private `.eml` files;
+production must configure the Resend provider as described in §12. Without a
+delivery provider, the request still returns the same generic response for
+known and unknown addresses, but users cannot receive a usable reset link.
 
-**Email verification:** set `emailVerification.sendVerificationEmail`, then flip
-`requireEmailVerification: true`. The `users.email_verified` column is already
-in place and defaults to `false`.
+**Email verification:** the provider hook is present, but enforcement and
+sign-up delivery are intentionally disabled for V1. The `users.email_verified`
+column remains `false` until verification is explicitly enabled; the UI does
+not claim that an address has been verified.
 
 ---
 
@@ -378,30 +392,36 @@ in place and defaults to `false`.
 1. **Better Auth rate limiting is in-memory and per-process.** The Phase 17
    Redis limiter covers search and uploads, but credential limits are not yet a
    distributed guarantee.
-2. **No email delivery**, therefore no email verification and no password
-   reset. A user who forgets their password currently has no self-service route.
+2. **Email delivery is provider-configured.** Local development writes private
+   `.eml` files; production requires `EMAIL_PROVIDER=resend`, `EMAIL_FROM`, and
+   `RESEND_API_KEY`.
 3. **No account lockout.** Rate limiting slows brute force but there is no
    progressive delay or lockout after repeated failures, and no notification of
    suspicious sign-ins.
 4. **No session management UI.** Sessions are per-device rows and Better Auth
    exposes `listSessions` / `revokeSession`, but nothing surfaces them yet.
-5. **`isActive` is not enforced at sign-in.** The column exists and defaults to
-   `true`, but nothing currently blocks a deactivated user from authenticating.
-   When deactivation becomes a real feature, add a
-   `databaseHooks.session.create.before` check.
-6. **The username availability hook costs one extra query per sign-up.** A
+5. **Account deactivation is a V1 soft lifecycle operation.** The authenticated
+   settings action sets `isActive=false`, revokes every session, and preserves
+   authored workspace history because restrictive authorship foreign keys make
+   hard deletion unsafe. The UI requires explicit confirmation.
+6. **Avatars use private, versioned application URLs.** Only PNG, JPEG, WebP,
+   and GIF uploads up to 5 MB are accepted after shared content-signature
+   validation. Avatar bytes stay outside `public`; the download route requires
+   the owner's active session and rejects another user's avatar path.
+7. **The username availability hook costs one extra query per sign-up.** A
    deliberate trade for a precise error message; sign-up is not a hot path.
-7. **`getSessionCookie` in the proxy hardcodes the `neura` cookie prefix.** It
+8. **`getSessionCookie` in the proxy hardcodes the `neura` cookie prefix.** It
    must stay in sync with `advanced.cookiePrefix` in `auth.ts`. The proxy runs
    in a separate, edge-oriented bundle, so importing the config there is not
    free; both sites are commented.
-8. **No automated test suite.** The flows in §9 were verified manually against a
-   live server. Automating them needs a test runner, which this phase did not
-   introduce.
 
 ---
 
 ## 13. Recommended follow-up
+
+This section is retained as historical planning context. V1 now includes the
+email provider seam, password reset flow, deactivated-user session enforcement,
+and automated unit/browser test foundations described above.
 
 **Phase 18 — Final QA, production deployment and launch readiness.** The
 workspace, collaboration, AI, files, search, and hardening phases now sit on
@@ -413,9 +433,7 @@ Prerequisites worth settling first:
 1. **Decide the post-registration destination.** Today every new user lands on
    an empty `/app`. Workspace creation or invite acceptance should own that
    redirect.
-2. **Enforce `isActive` at sign-in** before deactivation is exposed anywhere
-   (limitation 5).
-3. **Add a test runner** so §9 becomes an automated regression suite rather than
+2. **Add a test runner** so §9 becomes an automated regression suite rather than
    a document.
-4. **Wire Redis rate limiting** if any deployment is planned before the Security
+3. **Wire Redis rate limiting** if any deployment is planned before the Security
    phase.

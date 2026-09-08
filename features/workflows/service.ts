@@ -16,10 +16,14 @@ import {
   proposeAIAction,
   validateAIToolInput,
 } from "@/features/ai";
+import { requireAIConversation } from "@/features/ai/services/conversation-service";
 import { recordAIAudit } from "@/features/ai";
 import { emitApplicationEvent } from "@/features/notifications";
 
-import { workflowDefinitionSchema } from "./validations";
+import {
+  findInvalidWorkflowReference,
+  workflowDefinitionSchema,
+} from "./validations";
 import {
   claimExecutionRow,
   cancelExecutionRow,
@@ -33,6 +37,7 @@ import {
   linkStepAction,
   listExecutionRows,
   listWorkflowRows,
+  updateWorkflowRow,
   skipPendingSteps,
   updateExecutionRow,
   updateStepRow,
@@ -137,6 +142,12 @@ export async function validateWorkflowDefinition(input: {
       "AI_INVALID_INPUT",
       "A workflow can contain at most five steps.",
     );
+  const invalidReference = findInvalidWorkflowReference(parsed.data.steps);
+  if (invalidReference)
+    throw new AIError(
+      "AI_INVALID_INPUT",
+      `Step ${invalidReference.stepIndex + 1} references a later or missing step result.`,
+    );
   const context = workflowContext(input.userId, input.workspaceId);
   const validatedSteps = [];
   for (const step of parsed.data.steps) {
@@ -207,6 +218,94 @@ export async function listWorkflows(userId: string, workspaceId: string) {
   return listWorkflowRows(userId, workspaceId);
 }
 
+export async function getWorkflow(workflowId: string, userId: string) {
+  const workflow = await getWorkflowRow(workflowId, userId);
+  if (!workflow) throw new AIError("AI_NOT_FOUND", "Workflow not found.");
+  await requireWorkspaceMembership(workflow.workspaceId, userId);
+  return workflow;
+}
+
+export async function updateWorkflow(input: {
+  userId: string;
+  workflowId: string;
+  workspaceId: string;
+  name: string;
+  description?: string | null;
+  trigger: "MANUAL" | "AI_REQUEST";
+  steps: unknown[];
+}) {
+  const workflow = await getWorkflow(input.workflowId, input.userId);
+  if (workflow.workspaceId !== input.workspaceId)
+    throw new AIError(
+      "AI_FORBIDDEN",
+      "That workflow is outside the authorized workspace.",
+    );
+  await enforceAIRateLimit(input.userId, input.workspaceId);
+  const definition = await validateWorkflowDefinition({
+    userId: input.userId,
+    workspaceId: input.workspaceId,
+    definition: { trigger: input.trigger, steps: input.steps },
+  });
+  const updated = await updateWorkflowRow({
+    workflowId: input.workflowId,
+    userId: input.userId,
+    name: input.name.trim(),
+    description: input.description ?? null,
+    trigger:
+      input.trigger === "AI_REQUEST"
+        ? WorkflowTriggerType.AI_REQUEST
+        : WorkflowTriggerType.MANUAL,
+    definition,
+  });
+  if (!updated) throw new AIError("AI_NOT_FOUND", "Workflow not found.");
+  await audit({
+    userId: input.userId,
+    workspaceId: input.workspaceId,
+    action: "workflow.updated",
+    status: "updated",
+    workflowId: input.workflowId,
+  });
+  return updated;
+}
+
+export async function setWorkflowStatus(input: {
+  userId: string;
+  workflowId: string;
+  status: "READY" | "DISABLED";
+}) {
+  const workflow = await getWorkflow(input.workflowId, input.userId);
+  if (input.status === "READY") {
+    await validateWorkflowDefinition({
+      userId: input.userId,
+      workspaceId: workflow.workspaceId,
+      definition: workflow.definition,
+    });
+  }
+  const updated = await updateWorkflowRow({
+    workflowId: input.workflowId,
+    userId: input.userId,
+    status:
+      input.status === "READY" ? WorkflowStatus.READY : WorkflowStatus.DISABLED,
+  });
+  if (!updated) throw new AIError("AI_NOT_FOUND", "Workflow not found.");
+  await audit({
+    userId: input.userId,
+    workspaceId: workflow.workspaceId,
+    action: input.status === "READY" ? "workflow.enabled" : "workflow.disabled",
+    status: input.status.toLowerCase(),
+    workflowId: workflow.id,
+  });
+  return updated;
+}
+
+export async function deleteWorkflow(userId: string, workflowId: string) {
+  return setWorkflowStatus({
+    userId,
+    workflowId,
+    status: "DISABLED",
+  });
+}
+
 export async function listWorkflowExecutions(
   userId: string,
   workspaceId: string,
@@ -235,6 +334,12 @@ export async function startWorkflowExecution(input: {
   if (!workflow) throw new AIError("AI_NOT_FOUND", "Workflow not found.");
   if (workflow.status !== "READY")
     throw new AIError("AI_INVALID_INPUT", "That workflow is not ready to run.");
+  if (input.conversationId)
+    await requireAIConversation(
+      input.conversationId,
+      input.userId,
+      workflow.workspaceId,
+    );
   await enforceAIRateLimit(input.userId, workflow.workspaceId);
   const definition = await validateWorkflowDefinition({
     userId: input.userId,

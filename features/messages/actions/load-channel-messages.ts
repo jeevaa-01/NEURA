@@ -1,6 +1,7 @@
 "use server";
 
 import { listChannelMessages } from "../services/message-service";
+import { listConversationMessages } from "../services/conversation-service";
 import { messageHistorySchema } from "../validations/message-schema";
 import type { MessageHistory } from "../types";
 import type { WorkspaceActionResult } from "@/features/workspaces/types";
@@ -25,12 +26,18 @@ export async function loadChannelMessagesAction(
     const user = await getAuthenticatedUser();
     return {
       ok: true,
-      data: await listChannelMessages(
-        parsed.data.channelId,
-        user.id,
-        parsed.data.cursor,
-        parsed.data.limit,
-      ),
+      data: parsed.data.conversationId
+        ? await listConversationMessages(
+            parsed.data.conversationId,
+            user.id,
+            parsed.data.cursor,
+          )
+        : await listChannelMessages(
+            parsed.data.channelId!,
+            user.id,
+            parsed.data.cursor,
+            parsed.data.limit,
+          ),
     };
   } catch (error) {
     return { ok: false, error: toWorkspaceActionError(error) };

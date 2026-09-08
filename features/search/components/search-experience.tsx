@@ -53,14 +53,14 @@ const RESULT_LABELS: Record<SearchResultType, string> = {
   workspace: "Workspace",
 };
 
-const RECENT_KEY = "neura:recent-searches";
-
 export function SearchExperience({
   workspaces,
   people,
+  userId: currentUserId,
 }: {
   workspaces: WorkspaceOption[];
   people: PersonOption[];
+  userId: string;
 }) {
   const [query, setQuery] = useState("");
   const [type, setType] = useState<SearchFilterType>("all");
@@ -81,9 +81,12 @@ export function SearchExperience({
   const channels = selectedWorkspace?.channels ?? [];
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setRecent(readRecentSearches()), 0);
+    const timer = window.setTimeout(
+      () => setRecent(readRecentSearches(currentUserId)),
+      0,
+    );
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [currentUserId]);
 
   const searchUrl = useMemo(() => {
     const params = new URLSearchParams({ q: query.trim(), type, limit: "20" });
@@ -109,7 +112,7 @@ export function SearchExperience({
           if (!result.ok)
             throw new Error(body.error ?? "Search is unavailable.");
           setResponse(body);
-          rememberSearch(normalized, setRecent);
+          rememberSearch(normalized, currentUserId, setRecent);
         })
         .catch((reason: unknown) => {
           if (reason instanceof DOMException && reason.name === "AbortError")
@@ -126,7 +129,7 @@ export function SearchExperience({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [query, searchUrl]);
+  }, [query, searchUrl, currentUserId]);
 
   function resetSearchState() {
     setResponse(null);
@@ -346,10 +349,18 @@ export function SearchExperience({
   );
 }
 
-function rememberSearch(value: string, setRecent: (value: string[]) => void) {
+function recentSearchKey(userId: string) {
+  return `neura:recent-searches:${userId}`;
+}
+
+function rememberSearch(
+  value: string,
+  userId: string,
+  setRecent: (value: string[]) => void,
+) {
   try {
     const current = JSON.parse(
-      window.localStorage.getItem(RECENT_KEY) ?? "[]",
+      window.localStorage.getItem(recentSearchKey(userId)) ?? "[]",
     ) as unknown;
     const values = [
       value,
@@ -359,17 +370,20 @@ function rememberSearch(value: string, setRecent: (value: string[]) => void) {
     ]
       .filter((item, index, all) => all.indexOf(item) === index)
       .slice(0, 6);
-    window.localStorage.setItem(RECENT_KEY, JSON.stringify(values));
+    window.localStorage.setItem(
+      recentSearchKey(userId),
+      JSON.stringify(values),
+    );
     setRecent(values);
   } catch {
     // Private browsing and disabled storage should not make search fail.
   }
 }
 
-function readRecentSearches() {
+function readRecentSearches(userId: string) {
   try {
     const stored = JSON.parse(
-      window.localStorage.getItem(RECENT_KEY) ?? "[]",
+      window.localStorage.getItem(recentSearchKey(userId)) ?? "[]",
     ) as unknown;
     return Array.isArray(stored)
       ? stored

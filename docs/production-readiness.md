@@ -37,16 +37,23 @@ prevent messages, notifications, or search from being persisted or queried.
   not serve file bytes.
 - Baseline headers are applied by Next.js: `nosniff`, frame denial, a strict
   referrer policy, a restrictive permissions policy, and HSTS in production.
-  A strict CSP is intentionally deferred until the Next/Better Auth/runtime
-  script inventory is fixed; an incorrect CSP would break required flows.
+  A strict CSP is present for production; its script/style allowances reflect
+  the current Next/Better Auth runtime.
 
 ## Rate limits and reliability
 
-- Better Auth limits credential operations in-process: sign-in 5/minute and
-  sign-up 5/5 minutes.
-- Redis-backed limits cover authenticated search (60/minute) and file uploads
-  (20/minute per user). AI keeps its existing fail-closed 20/minute workspace
-  budget. Rate-limited responses include `Retry-After`.
+- Better Auth retains its in-process credential limits as defense in depth. A
+  Redis-backed outer limiter protects sign-in (20/minute per trusted client
+  address), sign-up (10/5 minutes), password reset/change and verification
+  operations (10/5 minutes), and account updates.
+- Redis-backed limits also cover profile/avatar/account mutations, authenticated
+  search (60/minute), file uploads (20/minute), AI (20/minute per user and
+  workspace), and realtime connection openings (30/minute). Rate-limited
+  responses include `Retry-After`.
+- Authentication, AI, account security, and realtime fail closed on Redis
+  failure. Search, file processing, and other lower-risk operations degrade
+  open with one bounded operational warning; their primary authorization still
+  remains server-side.
 - Redis is optional for core persistence. Realtime uses authenticated SSE with
   channel authorization and cleanup; clients must recover from reconnects by
   reloading authoritative state.
@@ -95,12 +102,13 @@ Node.js `>=20.9.0`, PostgreSQL, and Redis are the supported runtime baseline.
 
 ## Known limitations and scaling path
 
-- The repository has no automated test runner or authenticated fixture suite;
-  Phase 17 therefore validates with TypeScript, ESLint, Prettier, Prisma,
-  production build, and unauthenticated HTTP smoke checks.
-- Better Auth credential limiting is still per-process. The Phase 17 Redis
-  limiter covers search and uploads, but credential limits are not yet a
-  distributed guarantee.
+- Vitest covers launch-critical domain logic. Playwright provides an opt-in
+  authenticated browser smoke suite; it requires an isolated deployment with
+  PostgreSQL and Redis.
+- Better Auth's internal credential counter remains per-process, but the Redis
+  outer limiter prevents the documented auth budgets from multiplying across
+  application instances. Correct client-address attribution depends on a
+  trusted reverse proxy setting `X-Forwarded-For` or `X-Real-IP`.
 - Local indexing is synchronous after upload. Failed indexing preserves the
   file and exposes a retryable failed status, but a background queue is the
   natural next step for larger documents or high upload volume.
@@ -112,5 +120,5 @@ Node.js `>=20.9.0`, PostgreSQL, and Redis are the supported runtime baseline.
   Prisma tooling (`deepmerge-ts` and `mysql2`). The suggested forced fix would
   downgrade Prisma to a breaking major, so no automatic upgrade was applied;
   review this during dependency maintenance with a compatible Prisma release.
-- Authenticated cross-tenant and end-to-end browser tests require valid local
-  sessions and fixtures and were not claimed in this phase.
+- Authenticated cross-tenant and realtime browser checks remain a deployment
+  gate and must run with isolated test data before broad launch.

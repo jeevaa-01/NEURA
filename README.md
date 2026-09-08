@@ -125,6 +125,10 @@ non-interactive.
 cp .env.example .env
 ```
 
+Next.js also loads `.env.local`, but Docker Compose reads `.env` by default, so
+keep the infrastructure variables in `.env` (or pass an explicit Compose
+`--env-file`).
+
 Then start the infrastructure and apply the schema:
 
 ```bash
@@ -168,13 +172,15 @@ a secret behind that prefix.**
 
 ## 6. Docker infrastructure
 
-Only stateful services run in Docker. The Next.js application runs on the host
-(or in WSL2) so hot reload stays fast. There is no application container yet.
+The default Compose profile runs only the stateful development services. The
+`production` profile also builds the Next.js application, applies migrations,
+and mounts persistent application file storage.
 
 | Service    | Image                | Host port | Volume                 |
 | ---------- | -------------------- | --------- | ---------------------- |
 | `postgres` | `postgres:16-alpine` | `5432`    | `neura_postgres_data`  |
 | `redis`    | `redis:7-alpine`     | `6379`    | `neura_redis_data`     |
+| `app`      | local multi-stage build | `3000` | `neura_app_storage` |
 
 Both define health checks, restart automatically, and persist to named volumes.
 On first creation the database runs
@@ -193,6 +199,18 @@ docker compose ps      # health status
 Redis runs with `--appendonly yes` so cached and pub/sub state survives a
 restart.
 
+For a lightweight production-style deployment, set a real
+`BETTER_AUTH_SECRET` in `.env` and run:
+
+```bash
+docker compose --profile production up -d --build
+```
+
+The `migrate` one-shot service applies committed Prisma migrations before the
+application starts. The app image runs as a non-root user and stores uploads in
+the named `neura_app_storage` volume. Do not use development defaults or the
+console email provider for a public deployment.
+
 ---
 
 ## 7. Development commands
@@ -207,11 +225,19 @@ restart.
 | `npm run format`       | Prettier write                                    |
 | `npm run format:check` | Prettier check                                    |
 | `npm run typecheck`    | `tsc --noEmit`                                    |
+| `npm test`             | Vitest unit/integration tests                     |
+| `npm run test:e2e`     | Playwright browser smoke suite (opt-in with `RUN_E2E=1`) |
 | `npm run db:generate`  | Regenerate the Prisma client                      |
 | `npm run db:migrate`   | Create and apply a migration (development)        |
 | `npm run db:deploy`    | Apply pending migrations (production)             |
 | `npm run db:push`      | Push the schema without a migration (prototyping) |
 | `npm run db:studio`    | Open Prisma Studio                                |
+
+For the opt-in Playwright suite, export `RUN_E2E` in the shell that launches
+Playwright. In PowerShell use `$env:RUN_E2E = "1"; npm.cmd run test:e2e`; in
+cmd.exe use `set "RUN_E2E=1" && npm.cmd run test:e2e`. PowerShell's `set`
+command creates a shell variable and does not export a child-process
+environment variable.
 
 ### Health check
 
@@ -302,15 +328,31 @@ NEURA/
 - **Husky is intentionally not installed.** It was optional, and the same
   guarantees are available from `npm run lint` / `format:check` / `typecheck` in
   CI without adding a git-hook layer.
+- **Account email uses a provider seam.** Local development writes private
+  `.eml` files under `.local-email-inbox`; production can use Resend with
+  `EMAIL_PROVIDER=resend`, `EMAIL_FROM`, and `RESEND_API_KEY`.
 
 ---
 
-## 10. Release documentation
+## 10. API and developer documentation
 
+- [Developer API reference](docs/API_REFERENCE.md)
+- [OpenAPI specification](docs/openapi.yaml)
+- [Server Action contracts](docs/server-actions.md)
+- [Authorization matrix](docs/API_AUTHORIZATION_MATRIX.md)
+- [Error contract](docs/API_ERRORS.md)
+- [Pagination contract](docs/API_PAGINATION.md)
+- [Security contract](docs/API_SECURITY.md)
+
+## 11. Release documentation
+
+- [Deployment handoff](docs/DEPLOYMENT_HANDOFF.md)
 - [Deployment guide](docs/deployment.md)
 - [Launch checklist](docs/launch-checklist.md)
 - [Production readiness](docs/production-readiness.md)
 - [Authentication architecture](docs/authentication.md)
+- [Staging smoke test](docs/STAGING_SMOKE_TEST.md)
+- [Backup and restore handoff](docs/BACKUP_RESTORE.md)
 
 The core architecture is considered feature complete for the initial launch.
 Do not add another major architecture phase without evidence from real users,

@@ -7,6 +7,7 @@ import {
   canAccessChannel,
   requireWorkspaceMembership,
 } from "@/features/workspaces";
+import { WorkspaceError } from "@/features/workspaces/services/errors";
 
 import { AIError } from "./ai-errors";
 import type {
@@ -68,7 +69,16 @@ export async function resolveAIWorkspaceContext(
   workspaceId: string,
   channelId?: string | null,
 ) {
-  await requireWorkspaceMembership(workspaceId, userId);
+  try {
+    await requireWorkspaceMembership(workspaceId, userId);
+  } catch (error) {
+    if (error instanceof WorkspaceError)
+      throw new AIError(
+        "AI_FORBIDDEN",
+        "You do not have access to that workspace.",
+      );
+    throw error;
+  }
   if (!channelId) return { workspaceId, channelId: null };
 
   const channel = await prisma.channel.findUnique({
@@ -80,7 +90,16 @@ export async function resolveAIWorkspaceContext(
       "AI_FORBIDDEN",
       "That channel is outside this workspace.",
     );
-  await canAccessChannel(channel.id, userId);
+  try {
+    await canAccessChannel(channel.id, userId);
+  } catch (error) {
+    if (error instanceof WorkspaceError)
+      throw new AIError(
+        "AI_FORBIDDEN",
+        "You do not have access to that channel.",
+      );
+    throw error;
+  }
   return { workspaceId, channelId: channel.id };
 }
 

@@ -1,7 +1,8 @@
 # NEURA UI architecture
 
-This document describes the Phase 4 UI foundation: a dark, dense application
-shell with real authentication data and intentionally empty product surfaces.
+This document describes the application shell: a dark, dense authenticated
+chrome with route-specific product surfaces and a small number of explicitly
+planned placeholders.
 
 ## Application shell
 
@@ -49,7 +50,8 @@ Reusable foundation components live in `components/`:
   small primitives built on the existing dependency set.
 - `components/shared/page-header.tsx`, `empty-state.tsx`, and
   `loading-skeleton.tsx`: consistent route and loading states.
-- `components/shared/platform-placeholder.tsx`: shared placeholder route frame.
+- `components/shared/platform-placeholder.tsx`: shared frame for product areas
+  that are intentionally not implemented yet.
 - `components/layout/app-shell.tsx`: composition and interaction boundary for
   navigation, command palette, user menu, drawer and context panel.
 
@@ -60,23 +62,26 @@ The current route map is:
 | Route | Surface |
 | --- | --- |
 | `/app` | Command center |
-| `/app/messages` | Messages placeholder |
-| `/app/activity` | Activity placeholder |
-| `/app/agents` | Agents placeholder |
-| `/app/search` | Search placeholder |
+| `/app/messages` | Direct-message inbox and conversations |
+| `/app/activity` | Permission-aware activity feed |
+| `/app/agents` | Bounded workflow runner |
+| `/app/ai` | AI assistant and confirmation-gated actions |
+| `/app/notifications` | Notification center |
+| `/app/search` | Cross-workspace search |
 | `/app/profile` | Profile placeholder |
 | `/app/settings` | Settings placeholder |
 
 The route list is defined once in the shell for rail, mobile and command
-palette navigation. The pages remain server components, so future data loading
-can be added without turning the entire shell into a client component.
+palette navigation. The pages remain server components where possible, so data
+loading stays close to each route without turning the entire shell into a
+client component.
 
 ## Command palette
 
 The palette is UI-only and lives in the shell. `Ctrl+K` and `Cmd+K` open it;
 Escape closes it; Arrow Up/Down changes the highlighted command; Enter opens
-the selected route. It currently navigates to the existing placeholder pages
-and opens the workspace-coming-soon dialog for workspace creation.
+the selected route. It navigates to the current route surfaces and opens the
+workspace-coming-soon dialog for workspace creation.
 
 ## Future UI extension strategy
 

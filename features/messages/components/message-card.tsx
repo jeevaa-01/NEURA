@@ -22,6 +22,7 @@ export function MessageCard({
   currentUserId,
   canModerate,
   onReply,
+  showReply = true,
   onEdit,
   onDelete,
   onToggleReaction,
@@ -29,7 +30,8 @@ export function MessageCard({
   message: MessageSummary;
   currentUserId: string;
   canModerate: boolean;
-  onReply: () => void;
+  onReply?: () => void;
+  showReply?: boolean;
   onEdit: (content: string) => Promise<void>;
   onDelete: () => Promise<void>;
   onToggleReaction: (emoji: string, reacted: boolean) => Promise<void>;
@@ -161,23 +163,27 @@ export function MessageCard({
                 </button>
               );
             })}
-            <button
-              type="button"
-              onClick={onReply}
-              className="focus-ring inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] text-text-muted hover:bg-surface-hover hover:text-text-primary"
-            >
-              <Reply aria-hidden className="size-3.5" /> Reply
-            </button>
-            {message.replyCount > 0 && (
-              <button
-                type="button"
-                onClick={onReply}
-                className="focus-ring inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] text-accent hover:bg-accent-muted"
-              >
-                <MessageCircle aria-hidden className="size-3.5" />{" "}
-                {message.replyCount}{" "}
-                {message.replyCount === 1 ? "reply" : "replies"}
-              </button>
+            {showReply && onReply && (
+              <>
+                <button
+                  type="button"
+                  onClick={onReply}
+                  className="focus-ring inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] text-text-muted hover:bg-surface-hover hover:text-text-primary"
+                >
+                  <Reply aria-hidden className="size-3.5" /> Reply
+                </button>
+                {message.replyCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={onReply}
+                    className="focus-ring inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] text-accent hover:bg-accent-muted"
+                  >
+                    <MessageCircle aria-hidden className="size-3.5" />{" "}
+                    {message.replyCount}{" "}
+                    {message.replyCount === 1 ? "reply" : "replies"}
+                  </button>
+                )}
+              </>
             )}
             {(isOwn || canModerate) && (
               <span className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">

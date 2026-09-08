@@ -2,6 +2,14 @@ import type { NotificationType } from "@/lib/generated/prisma/client";
 
 export type ApplicationEvent =
   | {
+      type: "direct.message.created";
+      actorUserId: string;
+      workspaceId: string | null;
+      conversationId: string;
+      resourceId: string;
+      parentId: string | null;
+    }
+  | {
       type: "message.created";
       actorUserId: string;
       workspaceId: string;
@@ -16,6 +24,7 @@ export type ApplicationEvent =
       channelId: string;
       resourceId: string;
       emoji: string;
+      parentId: string | null;
     }
   | {
       type: "channel.created";

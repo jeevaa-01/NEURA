@@ -37,7 +37,14 @@ export function Avatar({
       )}
     >
       {src ? (
-        <Image src={src} alt="" fill sizes="48px" className="object-cover" />
+        <Image
+          src={src}
+          alt=""
+          fill
+          sizes="48px"
+          unoptimized={src.startsWith("/api/account/avatar/")}
+          className="object-cover"
+        />
       ) : (
         initials(name)
       )}

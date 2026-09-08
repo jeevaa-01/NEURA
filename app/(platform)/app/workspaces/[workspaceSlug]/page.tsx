@@ -9,6 +9,8 @@ import {
   type ChannelMemberOption,
 } from "@/features/workspaces/components/channel-create-dialog";
 import { WorkspaceNav } from "@/features/workspaces/components/workspace-nav";
+import { TaskManager } from "@/features/tasks/components/task-manager";
+import { listTasks } from "@/features/tasks/services/task-service";
 import { getWorkspaceMembers } from "@/features/workspaces/queries/get-workspace-members";
 import { getWorkspaceBySlug } from "@/features/workspaces/queries/get-workspace-by-slug";
 import { getSession } from "@/lib/auth";
@@ -20,7 +22,10 @@ export default async function WorkspacePage({
   searchParams,
 }: {
   params: Promise<{ workspaceSlug: string }>;
-  searchParams: Promise<{ create?: string | string[] }>;
+  searchParams: Promise<{
+    create?: string | string[];
+    taskId?: string | string[];
+  }>;
 }) {
   const { workspaceSlug } = await params;
   const query = await searchParams;
@@ -29,7 +34,9 @@ export default async function WorkspacePage({
 
   const workspace = await getWorkspaceBySlug(workspaceSlug, session.user.id);
   if (!workspace) notFound();
+  const taskId = typeof query.taskId === "string" ? query.taskId : null;
   const members = await getWorkspaceMembers(workspace.id, session.user.id);
+  const tasks = await listTasks(session.user.id, workspace.id);
   const memberOptions: ChannelMemberOption[] = members.map((member) => ({
     id: member.id,
     userId: member.user.id,
@@ -73,6 +80,15 @@ export default async function WorkspacePage({
         </div>
       </header>
       <WorkspaceNav workspaceSlug={workspace.slug} active="overview" />
+
+      <TaskManager
+        workspaceId={workspace.id}
+        tasks={tasks}
+        members={memberOptions}
+        selectedTaskId={
+          taskId && /^[0-9a-f-]{36}$/i.test(taskId) ? taskId : null
+        }
+      />
 
       <section>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-4">

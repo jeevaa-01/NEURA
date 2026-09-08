@@ -9,7 +9,10 @@ import { serverEnv } from "@/lib/validations/env";
  */
 const globalForRedis = globalThis as unknown as {
   redis: Redis | undefined;
+  redisErrorListenerAttached?: boolean;
 };
+
+let redisErrorLogged = false;
 
 const options: RedisOptions = {
   // Connect on first command instead of at import time, so building the app or
@@ -26,6 +29,21 @@ function createRedisClient(): Redis {
 }
 
 export const redis: Redis = globalForRedis.redis ?? createRedisClient();
+
+// ioredis emits connection failures asynchronously. Always attach a listener
+// to the shared client: callers still decide whether Redis is required for a
+// particular operation, but an optional outage must not become an unhandled
+// process-level error (or flood the server logs while retrying).
+if (!globalForRedis.redisErrorListenerAttached) {
+  redis.on("error", (error) => {
+    if (redisErrorLogged) return;
+    redisErrorLogged = true;
+    console.warn("[redis] shared client unavailable", {
+      error: error instanceof Error ? error.message : "unknown error",
+    });
+  });
+  globalForRedis.redisErrorListenerAttached = true;
+}
 
 if (serverEnv().NODE_ENV !== "production") {
   globalForRedis.redis = redis;

@@ -20,7 +20,7 @@ import { emitApplicationEvent } from "@/features/notifications";
 
 import { chunkDocument } from "./chunker";
 import { getKnowledgeConfig } from "./config";
-import { embedChunks } from "./embeddings";
+import { embedChunksForIndexing } from "./embeddings";
 import { KnowledgeError } from "./errors";
 import { documentParser } from "./parser";
 import { vectorStore } from "./vector-store";
@@ -277,18 +277,24 @@ export async function indexKnowledgeSource(
       content: existing.document.content,
     });
     const chunks = chunkDocument(parsed.text);
-    const embeddings = await embedChunks(chunks.map((chunk) => chunk.content));
+    const embeddings = await embedChunksForIndexing(
+      chunks.map((chunk) => chunk.content),
+    );
     if (embeddings.vectors.length !== chunks.length)
       throw new KnowledgeError(
         "KNOWLEDGE_INDEX_FAILED",
         "The source did not produce one embedding per chunk.",
       );
+    const chunkMetadata: Record<string, string | number | null> =
+      embeddings.mode === "semantic"
+        ? { embeddingModel: getKnowledgeConfig().embeddingModel }
+        : { embeddingMode: "keyword" };
     await vectorStore.replaceDocument(
       existing.document.id,
       chunks.map((chunk, index) => ({
         ...chunk,
         embedding: embeddings.vectors[index]!,
-        metadata: { embeddingModel: getKnowledgeConfig().embeddingModel },
+        metadata: chunkMetadata,
       })),
     );
     const indexedAt = new Date();
@@ -312,24 +318,25 @@ export async function indexKnowledgeSource(
         },
       }),
     ]);
-    await safeUsage({
-      userId,
-      workspaceId: existing.workspaceId,
-      conversationId: null,
-      provider: "openai",
-      model: getKnowledgeConfig().embeddingModel,
-      status: "embedding.completed",
-      inputTokens: embeddings.inputTokens,
-      outputTokens: null,
-      totalTokens: embeddings.inputTokens,
-    });
+    if (embeddings.mode === "semantic")
+      await safeUsage({
+        userId,
+        workspaceId: existing.workspaceId,
+        conversationId: null,
+        provider: "openai",
+        model: getKnowledgeConfig().embeddingModel,
+        status: "embedding.completed",
+        inputTokens: embeddings.inputTokens,
+        outputTokens: null,
+        totalTokens: embeddings.inputTokens,
+      });
     await safeAudit({
       userId,
       workspaceId: existing.workspaceId,
       conversationId: null,
       action: "knowledge.source.indexed",
       status: "completed",
-      metadata: { chunkCount: chunks.length },
+      metadata: { chunkCount: chunks.length, mode: embeddings.mode },
     });
     await emitApplicationEvent({
       type: "knowledge.indexed",
@@ -338,7 +345,7 @@ export async function indexKnowledgeSource(
       channelId: existing.channelId,
       resourceId: existing.id,
       name: existing.name,
-      summary: `${chunks.length} chunks indexed.`,
+      summary: `${chunks.length} chunks indexed${embeddings.mode === "keyword" ? " for keyword search" : ""}.`,
     });
   } catch (error) {
     const message =

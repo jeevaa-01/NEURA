@@ -15,6 +15,8 @@ import { getChannelReadStateForUser } from "@/features/messages/queries/get-chan
 import { MessageBoard } from "@/features/messages/components/message-board";
 import { getWorkspaceBySlug } from "@/features/workspaces/queries/get-workspace-by-slug";
 import { getSession } from "@/lib/auth";
+import { isFavoriteChannel } from "@/features/favorites/services/favorite-service";
+import { FavoriteChannelButton } from "@/features/favorites/components/favorite-channel-button";
 
 export const metadata: Metadata = { title: "Channel" };
 
@@ -41,6 +43,7 @@ export default async function ChannelPage({
     getChannelMessages(channel.id, session.user.id),
     getChannelReadStateForUser(channel.id, session.user.id),
   ]);
+  const favorited = await isFavoriteChannel(session.user.id, channel.id);
 
   const canManage =
     workspace.membership.role === "OWNER" ||
@@ -84,6 +87,10 @@ export default async function ChannelPage({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <FavoriteChannelButton
+            channelId={channel.id}
+            initialFavorited={favorited}
+          />
           <Link
             href={`/app/ai?workspaceId=${workspace.id}&channelId=${channel.id}`}
             className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-accent/30 bg-accent-muted px-3.5 text-sm font-medium text-accent hover:bg-accent/20"
@@ -104,6 +111,7 @@ export default async function ChannelPage({
       </header>
 
       <MessageBoard
+        key={channel.id}
         workspaceId={workspace.id}
         channelId={channel.id}
         channelName={channel.name}

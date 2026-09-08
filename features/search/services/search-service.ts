@@ -20,6 +20,7 @@ import type {
   SearchResultContext,
 } from "../types";
 import type { SearchQuery } from "../validations/search-validation";
+import { buildTaskSearchWhere, termsFor } from "./search-filters";
 
 const CANDIDATE_LIMIT = 80;
 const MAX_CURSOR_OFFSET = 5_000;
@@ -58,18 +59,6 @@ function safeText(value: string | null | undefined) {
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function termsFor(query: string) {
-  return [
-    ...new Set(
-      query
-        .toLocaleLowerCase()
-        .split(/\s+/)
-        .map((term) => term.replace(/[^\p{L}\p{N}_-]/gu, ""))
-        .filter((term) => term.length > 1),
-    ),
-  ].slice(0, 8);
 }
 
 function contains(value: string): Prisma.StringFilter {
@@ -403,18 +392,16 @@ async function searchPeople(
     where: {
       workspaceId: { in: scope.workspaceIds },
       status: MemberStatus.ACTIVE,
-      ...(privateChannel && scope.selectedChannelId
-        ? {
-            user: {
-              channelMemberships: {
-                some: { channelId: scope.selectedChannelId },
-              },
-            },
-          }
-        : {}),
       user: {
         isActive: true,
         ...(query.userId ? { id: query.userId } : {}),
+        ...(privateChannel && scope.selectedChannelId
+          ? {
+              channelMemberships: {
+                some: { channelId: scope.selectedChannelId },
+              },
+            }
+          : {}),
         OR: terms.flatMap((term) => [
           { displayName: contains(term) },
           { username: contains(term) },
@@ -660,17 +647,7 @@ async function searchTasks(
   if (scope.selectedChannelId) return [];
   const terms = termsFor(query.q);
   const rows = await prisma.workspaceTask.findMany({
-    where: {
-      workspaceId: { in: scope.workspaceIds },
-      ...(query.userId
-        ? { OR: [{ createdById: query.userId }, { assigneeId: query.userId }] }
-        : {}),
-      ...(dateFilter(query) ? { createdAt: dateFilter(query) } : {}),
-      OR: terms.flatMap((term) => [
-        { title: contains(term) },
-        { description: nullableContains(term) },
-      ]),
-    },
+    where: buildTaskSearchWhere(query, scope.workspaceIds, terms),
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: CANDIDATE_LIMIT,
     select: {

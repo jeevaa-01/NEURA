@@ -37,6 +37,7 @@ export default async function SearchPage() {
   ];
   return (
     <SearchExperience
+      userId={session.user.id}
       people={people}
       workspaces={workspaces.map((workspace) => ({
         id: workspace.id,

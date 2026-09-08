@@ -1,19 +1,33 @@
 import type { Metadata } from "next";
-import { MessageSquare } from "lucide-react";
 
-import { PlatformPlaceholder } from "@/components/shared/platform-placeholder";
+import { MessagesInbox } from "@/features/messages/components/messages-inbox";
+import {
+  listDirectConversations,
+  listWorkspacePeople,
+} from "@/features/messages/services/conversation-service";
+import { getUserWorkspaces } from "@/features/workspaces/queries/get-user-workspaces";
+import { getSession } from "@/lib/auth";
 
 export const metadata: Metadata = { title: "Messages" };
 
-export default function MessagesPage() {
+export default async function MessagesPage() {
+  const session = await getSession();
+  if (!session) return null;
+  const workspaces = await getUserWorkspaces(session.user.id);
+  const peopleEntries = await Promise.all(
+    workspaces.map(
+      async (workspace) =>
+        [
+          workspace.id,
+          await listWorkspacePeople(workspace.id, session.user.id),
+        ] as const,
+    ),
+  );
   return (
-    <PlatformPlaceholder
-      eyebrow="NEURA / MESSAGES"
-      title="Messages"
-      description="A focused space for the conversations that move your work forward."
-      icon={MessageSquare}
-      emptyTitle="No conversations yet"
-      emptyDescription="When you begin a conversation, your message threads will appear here with the context you need to stay in flow."
+    <MessagesInbox
+      workspaces={workspaces.map(({ id, name, slug }) => ({ id, name, slug }))}
+      peopleByWorkspace={Object.fromEntries(peopleEntries)}
+      initialConversations={await listDirectConversations(session.user.id)}
     />
   );
 }

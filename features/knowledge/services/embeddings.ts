@@ -107,3 +107,30 @@ export async function embedChunks(
   }
   return { vectors, inputTokens: inputTokens || null };
 }
+
+/**
+ * Indexing can remain useful when the optional semantic provider is absent.
+ * Empty vectors explicitly mean keyword-only; they are never treated as
+ * semantic vectors by the vector store.
+ */
+export async function embedChunksForIndexing(
+  chunks: string[],
+  service: EmbeddingService = new OpenAIEmbeddingService(),
+) {
+  try {
+    const result = await embedChunks(chunks, service);
+    return { ...result, mode: "semantic" as const };
+  } catch (error) {
+    if (
+      error instanceof KnowledgeError &&
+      (error.code === "KNOWLEDGE_NOT_CONFIGURED" ||
+        error.code === "KNOWLEDGE_PROVIDER_ERROR")
+    )
+      return {
+        vectors: chunks.map(() => []),
+        inputTokens: null,
+        mode: "keyword" as const,
+      };
+    throw error;
+  }
+}

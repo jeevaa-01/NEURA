@@ -45,7 +45,8 @@ export type RealtimeEventByType<T extends RealtimeEventType> = {
   eventId: string;
   timestamp: string;
   workspaceId: string;
-  channelId: string;
+  channelId: string | null;
+  conversationId: string | null;
   entityId: string;
   payload: RealtimeEventPayloads[T];
 };
@@ -81,7 +82,10 @@ export function isRealtimeEvent(value: unknown): value is RealtimeEvent {
     typeof event.eventId === "string" &&
     typeof event.timestamp === "string" &&
     typeof event.workspaceId === "string" &&
-    typeof event.channelId === "string" &&
+    (event.channelId === null || typeof event.channelId === "string") &&
+    (event.conversationId === null ||
+      typeof event.conversationId === "string") &&
+    Boolean(event.channelId) !== Boolean(event.conversationId) &&
     typeof event.entityId === "string" &&
     typeof event.payload === "object" &&
     event.payload !== null

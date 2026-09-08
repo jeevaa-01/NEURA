@@ -22,7 +22,8 @@ export type MessageMentionSummary = {
 
 export type MessageSummary = {
   id: string;
-  channelId: string;
+  channelId: string | null;
+  conversationId: string | null;
   authorId: string;
   parentId: string | null;
   content: string | null;
@@ -59,7 +60,8 @@ export type MessageSearchResult = Pick<
 };
 
 export type MessageReadState = {
-  channelId: string;
+  channelId: string | null;
+  conversationId: string | null;
   lastReadAt: string | null;
   latestMessageId: string | null;
   hasUnread: boolean;
@@ -68,4 +70,17 @@ export type MessageReadState = {
 export type MessageViewer = {
   userId: string;
   role: WorkspaceRole;
+};
+
+export type DirectConversationSummary = {
+  id: string;
+  workspaceId: string | null;
+  updatedAt: string;
+  user: {
+    id: string;
+    displayName: string;
+    username: string;
+    avatarUrl: string | null;
+  };
+  lastMessage: { content: string | null; createdAt: string } | null;
 };

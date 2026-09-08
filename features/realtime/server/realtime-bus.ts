@@ -18,6 +18,10 @@ export function realtimeTopic(channelId: string) {
   return `${REALTIME_PREFIX}:channel:${channelId}`;
 }
 
+export function conversationRealtimeTopic(conversationId: string) {
+  return `${REALTIME_PREFIX}:conversation:${conversationId}`;
+}
+
 export function userRealtimeTopic(userId: string) {
   return `${REALTIME_PREFIX}:user:${userId}`;
 }
@@ -68,12 +72,17 @@ function userIdFromPresenceMember(member: string) {
 export function createRealtimeEvent<T extends RealtimeEventType>(input: {
   type: T;
   workspaceId: string;
-  channelId: string;
+  channelId?: string;
+  conversationId?: string;
   entityId: string;
   payload: RealtimeEventPayloads[T];
 }): RealtimeEventByType<T> {
+  if (Boolean(input.channelId) === Boolean(input.conversationId))
+    throw new Error("A realtime event must target one container.");
   return {
     ...input,
+    channelId: input.channelId ?? null,
+    conversationId: input.conversationId ?? null,
     eventId: randomUUID(),
     timestamp: new Date().toISOString(),
   };
@@ -83,18 +92,23 @@ export function createRealtimeEvent<T extends RealtimeEventType>(input: {
 export async function publishRealtimeEvent<T extends RealtimeEventType>(input: {
   type: T;
   workspaceId: string;
-  channelId: string;
+  channelId?: string;
+  conversationId?: string;
   entityId: string;
   payload: RealtimeEventPayloads[T];
 }): Promise<RealtimeEventByType<T> | null> {
   const event = createRealtimeEvent(input);
   try {
-    await redis.publish(realtimeTopic(input.channelId), JSON.stringify(event));
+    const topic = input.channelId
+      ? realtimeTopic(input.channelId)
+      : conversationRealtimeTopic(input.conversationId!);
+    await redis.publish(topic, JSON.stringify(event));
     return event;
   } catch (error) {
     console.error("[realtime] publish failed", {
       type: input.type,
-      channelId: input.channelId,
+      channelId: input.channelId ?? null,
+      conversationId: input.conversationId ?? null,
       error: error instanceof Error ? error.message : "unknown error",
     });
     return null;
@@ -223,7 +237,10 @@ export function parseRealtimeMessage(raw: string): RealtimeEvent | null {
     if (
       typeof event.type !== "string" ||
       typeof event.eventId !== "string" ||
-      typeof event.channelId !== "string"
+      (typeof event.channelId !== "string" && event.channelId !== null) ||
+      (typeof event.conversationId !== "string" &&
+        event.conversationId !== null) ||
+      Boolean(event.channelId) === Boolean(event.conversationId)
     ) {
       return null;
     }

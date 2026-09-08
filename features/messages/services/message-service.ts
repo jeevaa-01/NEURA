@@ -13,6 +13,10 @@ import { WorkspaceError } from "@/features/workspaces/services/errors";
 import { publishRealtimeEvent } from "@/features/realtime/server/realtime-bus";
 import { emitApplicationEvent } from "@/features/notifications";
 import {
+  createConversationMessage,
+  requireConversationAccess,
+} from "./conversation-service";
+import {
   attachFilesToMessage,
   markMessageAttachmentsDeleted,
 } from "@/features/files/services/file-service";
@@ -40,6 +44,7 @@ const MANAGER_ROLES: WorkspaceRoleType[] = [
 const messageSelect = {
   id: true,
   channelId: true,
+  conversationId: true,
   authorId: true,
   parentId: true,
   content: true,
@@ -171,11 +176,12 @@ async function decorateMessages(
   }
 
   return rows.map((row) => {
-    if (!row.channelId)
+    if (!row.channelId && !row.conversationId)
       throw new WorkspaceError("MESSAGE_NOT_FOUND", "Message not found.");
     return {
       id: row.id,
       channelId: row.channelId,
+      conversationId: row.conversationId,
       authorId: row.authorId,
       parentId: row.parentId,
       content: row.isDeleted ? null : row.content,
@@ -203,21 +209,24 @@ async function decorateMessages(
 async function getMessageRow(messageId: string) {
   return prisma.message.findUnique({
     where: { id: messageId },
-    select: { id: true, channelId: true, authorId: true, isDeleted: true },
+    select: {
+      id: true,
+      channelId: true,
+      conversationId: true,
+      parentId: true,
+      authorId: true,
+      isDeleted: true,
+    },
   });
 }
 
 async function requireMessageAccess(messageId: string, userId: string) {
   const message = await getMessageRow(messageId);
-  if (!message?.channelId)
+  if (!message || (!message.channelId && !message.conversationId))
     throw new WorkspaceError("MESSAGE_NOT_FOUND", "Message not found.");
-  await canAccessChannel(message.channelId, userId);
-  return message as {
-    id: string;
-    channelId: string;
-    authorId: string;
-    isDeleted: boolean;
-  };
+  if (message.channelId) await canAccessChannel(message.channelId, userId);
+  else await requireConversationAccess(message.conversationId!, userId);
+  return message;
 }
 
 async function requireWritableChannel(channelId: string, userId: string) {
@@ -239,9 +248,9 @@ async function requireWritableChannel(channelId: string, userId: string) {
 function mentionedUsernames(content: string) {
   return [
     ...new Set(
-      [...content.matchAll(/(^|\s)@([a-zA-Z0-9_]{1,40})\b/g)].map(
-        (match) => match[2]?.toLowerCase() ?? "",
-      ),
+      [
+        ...content.matchAll(/(^|\s)@([a-zA-Z0-9_-]{1,40})(?![a-zA-Z0-9_-])/g),
+      ].map((match) => match[2]?.toLowerCase() ?? ""),
     ),
   ];
 }
@@ -311,6 +320,9 @@ export async function createMessage(
   userId: string,
   input: CreateMessageInput,
 ): Promise<MessageSummary> {
+  if (input.conversationId) return createConversationMessage(userId, input);
+  if (!input.channelId)
+    throw new WorkspaceError("INVALID_INPUT", "Choose a message destination.");
   const channel = await requireWritableChannel(input.channelId, userId);
   return prisma
     .$transaction(async (tx) => {
@@ -379,7 +391,10 @@ export async function createMessage(
           })),
         });
       }
-      return message;
+      return tx.message.findUniqueOrThrow({
+        where: { id: message.id },
+        select: messageSelect,
+      });
     })
     .then(async (message) => {
       const decorated = firstMessage(
@@ -464,6 +479,36 @@ export async function getThread(
       "Only a root message can open a thread.",
     );
   const decoded = decodeCursor(cursor);
+  if (parent.conversationId) {
+    const rows = await prisma.message.findMany({
+      where: {
+        conversationId: parent.conversationId,
+        parentId,
+        ...(decoded
+          ? {
+              OR: [
+                { createdAt: { lt: decoded.createdAt } },
+                { createdAt: decoded.createdAt, id: { lt: decoded.id } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: THREAD_PAGE_SIZE + 1,
+      select: messageSelect,
+    });
+    const page = rows.slice(0, THREAD_PAGE_SIZE);
+    const replies = await decorateMessages(page, userId);
+    const oldest = page.at(-1);
+    return {
+      parent,
+      replies: replies.reverse(),
+      nextCursor:
+        rows.length > THREAD_PAGE_SIZE && oldest
+          ? encodeCursor(oldest.createdAt, oldest.id)
+          : null,
+    };
+  }
   const rows = await prisma.message.findMany({
     where: {
       channelId: parent.channelId,
@@ -503,8 +548,39 @@ export async function updateMessage(
       "MESSAGE_NOT_FOUND",
       "Deleted messages cannot be edited.",
     );
+  if (existing.conversationId) {
+    const conversation = await requireConversationAccess(
+      existing.conversationId,
+      userId,
+    );
+    if (existing.authorId !== userId)
+      throw new WorkspaceError(
+        "FORBIDDEN",
+        "You can only edit your own messages.",
+      );
+    const message = await prisma.message.update({
+      where: { id: input.messageId },
+      data: {
+        content: input.content.trim(),
+        isEdited: true,
+        editedAt: new Date(),
+      },
+      select: messageSelect,
+    });
+    const decorated = firstMessage(
+      (await decorateMessages([message], userId))[0],
+    );
+    await publishRealtimeEvent({
+      type: "message.updated",
+      workspaceId: conversation.workspaceId ?? "platform",
+      conversationId: conversation.id,
+      entityId: decorated.id,
+      payload: { message: decorated },
+    });
+    return decorated;
+  }
   const channel = await prisma.channel.findUniqueOrThrow({
-    where: { id: existing.channelId },
+    where: { id: existing.channelId! },
     select: { workspaceId: true, archivedAt: true },
   });
   const membership = await requireWorkspaceMembership(
@@ -542,7 +618,7 @@ export async function updateMessage(
       const mentionIds = await resolveMentionIds(
         tx,
         channel.workspaceId,
-        existing.channelId,
+        existing.channelId!,
         input.content,
         userId,
       );
@@ -562,7 +638,7 @@ export async function updateMessage(
       await publishRealtimeEvent({
         type: "message.updated",
         workspaceId: channel.workspaceId,
-        channelId: existing.channelId,
+        channelId: existing.channelId!,
         entityId: decorated.id,
         payload: { message: decorated },
       });
@@ -572,8 +648,32 @@ export async function updateMessage(
 
 export async function deleteMessage(userId: string, messageId: string) {
   const existing = await requireMessageAccess(messageId, userId);
+  if (existing.conversationId) {
+    const conversation = await requireConversationAccess(
+      existing.conversationId,
+      userId,
+    );
+    if (existing.authorId !== userId)
+      throw new WorkspaceError("FORBIDDEN", "You cannot delete this message.");
+    const updated = await prisma.message.update({
+      where: { id: messageId },
+      data: { isDeleted: true, deletedAt: new Date() },
+      select: messageSelect,
+    });
+    const decorated = firstMessage(
+      (await decorateMessages([updated], userId))[0],
+    );
+    await publishRealtimeEvent({
+      type: "message.deleted",
+      workspaceId: conversation.workspaceId ?? "platform",
+      conversationId: conversation.id,
+      entityId: decorated.id,
+      payload: { message: decorated },
+    });
+    return decorated;
+  }
   const channel = await prisma.channel.findUnique({
-    where: { id: existing.channelId },
+    where: { id: existing.channelId! },
     select: { workspaceId: true },
   });
   if (!channel)
@@ -596,7 +696,7 @@ export async function deleteMessage(userId: string, messageId: string) {
   await publishRealtimeEvent({
     type: "message.deleted",
     workspaceId: channel.workspaceId,
-    channelId: existing.channelId,
+    channelId: existing.channelId!,
     entityId: decorated.id,
     payload: { message: decorated },
   });
@@ -629,15 +729,29 @@ export async function addReaction(
       );
     throw error;
   }
+  const reaction = { emoji: emoji.trim(), messageId, userId };
+  if (message.conversationId) {
+    const conversation = await requireConversationAccess(
+      message.conversationId,
+      userId,
+    );
+    await publishRealtimeEvent({
+      type: "reaction.added",
+      workspaceId: conversation.workspaceId ?? "platform",
+      conversationId: conversation.id,
+      entityId: messageId,
+      payload: reaction,
+    });
+    return reaction;
+  }
   const channel = await prisma.channel.findUniqueOrThrow({
-    where: { id: message.channelId },
+    where: { id: message.channelId! },
     select: { workspaceId: true },
   });
-  const reaction = { emoji: emoji.trim(), messageId, userId };
   await publishRealtimeEvent({
     type: "reaction.added",
     workspaceId: channel.workspaceId,
-    channelId: message.channelId,
+    channelId: message.channelId!,
     entityId: messageId,
     payload: reaction,
   });
@@ -645,9 +759,10 @@ export async function addReaction(
     type: "reaction.added",
     actorUserId: userId,
     workspaceId: channel.workspaceId,
-    channelId: message.channelId,
+    channelId: message.channelId!,
     resourceId: messageId,
     emoji: reaction.emoji,
+    parentId: message.parentId,
   });
   return reaction;
 }
@@ -662,15 +777,29 @@ export async function removeReaction(
     where: { messageId, userId, emoji: emoji.trim() },
   });
   if (!deleted.count) return { emoji: emoji.trim(), messageId, userId };
+  const reaction = { emoji: emoji.trim(), messageId, userId };
+  if (message.conversationId) {
+    const conversation = await requireConversationAccess(
+      message.conversationId,
+      userId,
+    );
+    await publishRealtimeEvent({
+      type: "reaction.removed",
+      workspaceId: conversation.workspaceId ?? "platform",
+      conversationId: conversation.id,
+      entityId: messageId,
+      payload: reaction,
+    });
+    return reaction;
+  }
   const channel = await prisma.channel.findUniqueOrThrow({
-    where: { id: message.channelId },
+    where: { id: message.channelId! },
     select: { workspaceId: true },
   });
-  const reaction = { emoji: emoji.trim(), messageId, userId };
   await publishRealtimeEvent({
     type: "reaction.removed",
     workspaceId: channel.workspaceId,
-    channelId: message.channelId,
+    channelId: message.channelId!,
     entityId: messageId,
     payload: reaction,
   });
@@ -695,6 +824,7 @@ export async function getChannelReadState(
   ]);
   return {
     channelId,
+    conversationId: null,
     lastReadAt: membership?.lastReadAt?.toISOString() ?? null,
     latestMessageId: latest?.id ?? null,
     hasUnread: Boolean(

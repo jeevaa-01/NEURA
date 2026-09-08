@@ -1,10 +1,14 @@
 import { getSession } from "@/lib/auth/session";
+import { WorkspaceError } from "@/features/workspaces/services/errors";
+import { z } from "zod";
 
 import { getAttachmentForUser } from "@/features/files/services/file-service";
 import { storageProvider } from "@/features/files/services/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const attachmentIdSchema = z.uuid();
 
 function asciiFileName(name: string) {
   return (
@@ -22,8 +26,18 @@ export async function GET(
   const session = await getSession();
   if (!session)
     return Response.json({ error: "Sign in required." }, { status: 401 });
-  const { attachmentId } = await context.params;
-  const attachment = await getAttachmentForUser(attachmentId, session.user.id);
+  const { attachmentId: rawAttachmentId } = await context.params;
+  const parsed = attachmentIdSchema.safeParse(rawAttachmentId);
+  if (!parsed.success)
+    return Response.json({ error: "File not found." }, { status: 404 });
+  let attachment;
+  try {
+    attachment = await getAttachmentForUser(parsed.data, session.user.id);
+  } catch (error) {
+    if (error instanceof WorkspaceError)
+      return Response.json({ error: "File not found." }, { status: 404 });
+    throw error;
+  }
   if (!attachment)
     return Response.json({ error: "File not found." }, { status: 404 });
   try {

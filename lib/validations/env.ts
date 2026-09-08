@@ -12,87 +12,133 @@ import { z } from "zod";
 const nodeEnvSchema = z.enum(["development", "test", "production"]);
 
 /** Variables that must never reach the browser bundle. */
-const serverEnvSchema = z.object({
-  NODE_ENV: nodeEnvSchema.default("development"),
-  DATABASE_URL: z
-    .string()
-    .min(1, "DATABASE_URL is required")
-    .refine(
-      (value) =>
-        value.startsWith("postgresql://") || value.startsWith("postgres://"),
-      "DATABASE_URL must be a PostgreSQL connection string",
-    ),
-  REDIS_URL: z
-    .string()
-    .min(1, "REDIS_URL is required")
-    .refine(
-      (value) => value.startsWith("redis://") || value.startsWith("rediss://"),
-      "REDIS_URL must be a Redis connection string",
-    ),
+const serverEnvSchema = z
+  .object({
+    NODE_ENV: nodeEnvSchema.default("development"),
+    DATABASE_URL: z
+      .string()
+      .min(1, "DATABASE_URL is required")
+      .refine(
+        (value) =>
+          value.startsWith("postgresql://") || value.startsWith("postgres://"),
+        "DATABASE_URL must be a PostgreSQL connection string",
+      ),
+    REDIS_URL: z
+      .string()
+      .min(1, "REDIS_URL is required")
+      .refine(
+        (value) =>
+          value.startsWith("redis://") || value.startsWith("rediss://"),
+        "REDIS_URL must be a Redis connection string",
+      ),
 
-  /**
-   * Signing key for session cookies and verification tokens.
-   *
-   * Rotating it invalidates every active session. Generate with:
-   *   openssl rand -base64 32
-   */
-  BETTER_AUTH_SECRET: z
-    .string()
-    .min(
-      32,
-      "BETTER_AUTH_SECRET must be at least 32 characters — generate one with `openssl rand -base64 32`",
-    ),
+    /**
+     * Signing key for session cookies and verification tokens.
+     *
+     * Rotating it invalidates every active session. Generate with:
+     *   openssl rand -base64 32
+     */
+    BETTER_AUTH_SECRET: z
+      .string()
+      .min(
+        32,
+        "BETTER_AUTH_SECRET must be at least 32 characters — generate one with `openssl rand -base64 32`",
+      ),
 
-  /**
-   * Origin Better Auth issues cookies and callback URLs for. Falls back to the
-   * public app URL, which is correct for every single-origin deployment.
-   */
-  BETTER_AUTH_URL: z.url().optional(),
-  OPENAI_API_KEY: z.preprocess(
-    (value) => (value === "" ? undefined : value),
-    z.string().min(1).optional(),
-  ),
-  OPENAI_MODEL: z.string().min(1).default("gpt-5-mini"),
-  AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(64).max(4_000).default(800),
-  KNOWLEDGE_EMBEDDING_MODEL: z
-    .string()
-    .min(1)
-    .default("text-embedding-3-small"),
-  KNOWLEDGE_MAX_DOCUMENT_CHARACTERS: z.coerce
-    .number()
-    .int()
-    .min(10_000)
-    .max(1_000_000)
-    .default(200_000),
-  KNOWLEDGE_MAX_CHUNKS: z.coerce.number().int().min(1).max(1_000).default(200),
-  KNOWLEDGE_CHUNK_SIZE: z.coerce
-    .number()
-    .int()
-    .min(500)
-    .max(8_000)
-    .default(4_000),
-  KNOWLEDGE_CHUNK_OVERLAP: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .max(1_000)
-    .default(400),
-  KNOWLEDGE_RETRIEVAL_LIMIT: z.coerce.number().int().min(1).max(20).default(8),
-  FILE_STORAGE_ROOT: z.string().min(1).default("./storage"),
-  FILE_MAX_BYTES: z.coerce
-    .number()
-    .int()
-    .min(1_024)
-    .max(25 * 1024 * 1024)
-    .default(25 * 1024 * 1024),
-  FILE_MAX_COUNT: z.coerce.number().int().min(1).max(10).default(10),
-  FILE_MAX_TOTAL_BYTES: z.coerce
-    .number()
-    .int()
-    .min(1_024)
-    .max(50 * 1024 * 1024)
-    .default(50 * 1024 * 1024),
-});
+    /**
+     * Origin Better Auth issues cookies and callback URLs for. Falls back to the
+     * public app URL, which is correct for every single-origin deployment.
+     */
+    BETTER_AUTH_URL: z.url().optional(),
+    OPENAI_API_KEY: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().min(1).optional(),
+    ),
+    OPENAI_MODEL: z.string().min(1).default("gpt-5-mini"),
+    AI_MAX_OUTPUT_TOKENS: z.coerce
+      .number()
+      .int()
+      .min(64)
+      .max(4_000)
+      .default(800),
+    KNOWLEDGE_EMBEDDING_MODEL: z
+      .string()
+      .min(1)
+      .default("text-embedding-3-small"),
+    KNOWLEDGE_MAX_DOCUMENT_CHARACTERS: z.coerce
+      .number()
+      .int()
+      .min(10_000)
+      .max(1_000_000)
+      .default(200_000),
+    KNOWLEDGE_MAX_CHUNKS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1_000)
+      .default(200),
+    KNOWLEDGE_CHUNK_SIZE: z.coerce
+      .number()
+      .int()
+      .min(500)
+      .max(8_000)
+      .default(4_000),
+    KNOWLEDGE_CHUNK_OVERLAP: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000)
+      .default(400),
+    KNOWLEDGE_RETRIEVAL_LIMIT: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(8),
+    FILE_STORAGE_ROOT: z.string().min(1).default("./storage"),
+    FILE_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1_024)
+      .max(25 * 1024 * 1024)
+      .default(25 * 1024 * 1024),
+    FILE_MAX_COUNT: z.coerce.number().int().min(1).max(10).default(10),
+    FILE_MAX_TOTAL_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1_024)
+      .max(50 * 1024 * 1024)
+      .default(50 * 1024 * 1024),
+    EMAIL_PROVIDER: z.enum(["console", "resend"]).default("console"),
+    EMAIL_FROM: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().email().optional(),
+    ),
+    RESEND_API_KEY: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().min(1).optional(),
+    ),
+    EMAIL_DEV_INBOX_DIR: z.string().min(1).default("./.local-email-inbox"),
+  })
+  .superRefine((values, context) => {
+    if (values.EMAIL_PROVIDER !== "resend") return;
+
+    if (!values.EMAIL_FROM) {
+      context.addIssue({
+        code: "custom",
+        path: ["EMAIL_FROM"],
+        message: "EMAIL_FROM is required when EMAIL_PROVIDER=resend.",
+      });
+    }
+
+    if (!values.RESEND_API_KEY) {
+      context.addIssue({
+        code: "custom",
+        path: ["RESEND_API_KEY"],
+        message: "RESEND_API_KEY is required when EMAIL_PROVIDER=resend.",
+      });
+    }
+  });
 
 /**
  * Variables that are inlined into the client bundle at build time.
@@ -169,6 +215,10 @@ export function serverEnv(): ServerEnv {
     FILE_MAX_BYTES: process.env.FILE_MAX_BYTES,
     FILE_MAX_COUNT: process.env.FILE_MAX_COUNT,
     FILE_MAX_TOTAL_BYTES: process.env.FILE_MAX_TOTAL_BYTES,
+    EMAIL_PROVIDER: process.env.EMAIL_PROVIDER,
+    EMAIL_FROM: process.env.EMAIL_FROM,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    EMAIL_DEV_INBOX_DIR: process.env.EMAIL_DEV_INBOX_DIR,
   });
 
   if (!parsed.success) {

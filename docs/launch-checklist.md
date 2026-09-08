@@ -14,6 +14,8 @@ explicit owner and follow-up before broad launch.
 - [ ] OpenAI key/model configured if AI is enabled.
 - [ ] Private persistent file storage is configured outside `public`.
 - [ ] `npm run build` completed successfully.
+- [ ] `npm test` completed successfully.
+- [ ] Playwright smoke tests completed with isolated data (`RUN_E2E=1`).
 
 ## Security
 
@@ -66,7 +68,7 @@ explicit owner and follow-up before broad launch.
 
 ## Current repository validation
 
-The Phase 18 repository validation covers static checks, Prisma validation,
-production build, and unauthenticated HTTP smoke tests. Authenticated browser
-regression tests remain `NOT TESTED` until valid development sessions and
-fixtures are supplied.
+The repository validation covers static checks, Vitest domain tests, Prisma
+validation, production build, and unauthenticated HTTP smoke tests. The
+Playwright suite is available but requires PostgreSQL, Redis, a running app, and
+isolated test data; do not mark it complete from a skipped run.

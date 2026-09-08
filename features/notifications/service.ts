@@ -190,6 +190,7 @@ export async function notifyUser(input: {
   if (preference && preferenceKey && !preference[preferenceKey]) return null;
 
   let row;
+  let created = true;
   try {
     row = await prisma.notification.create({
       data: {
@@ -212,6 +213,7 @@ export async function notifyUser(input: {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     ) {
+      created = false;
       row = await prisma.notification.findUnique({
         where: { dedupKey: input.dedupKey },
         select: notificationSelect,
@@ -223,11 +225,12 @@ export async function notifyUser(input: {
   }
   if (!row) return null;
   const summary = toNotification(row);
-  await publishUserRealtimeEvent({
-    userId: input.userId,
-    type: "notification.created",
-    payload: summary,
-  });
+  if (created)
+    await publishUserRealtimeEvent({
+      userId: input.userId,
+      type: "notification.created",
+      payload: summary,
+    });
   return summary;
 }
 
@@ -281,9 +284,54 @@ async function channelName(channelId: string) {
   return channel?.name ?? "a channel";
 }
 
+async function channelDestination(channelId: string, messageId?: string) {
+  const channel = await prisma.channel.findUnique({
+    where: { id: channelId },
+    select: {
+      slug: true,
+      workspace: { select: { slug: true } },
+    },
+  });
+  if (!channel) return "/app/messages";
+  const query = messageId ? `?messageId=${encodeURIComponent(messageId)}` : "";
+  return `/app/workspaces/${channel.workspace.slug}/channels/${channel.slug}${query}`;
+}
+
 export async function emitApplicationEvent(event: ApplicationEvent) {
   try {
     const actor = await actorName(event.actorUserId);
+    if (event.type === "direct.message.created") {
+      const message = await prisma.message.findUnique({
+        where: { id: event.resourceId },
+        select: {
+          conversation: {
+            select: { members: { select: { userId: true } } },
+          },
+        },
+      });
+      if (!message?.conversation) return;
+      for (const member of message.conversation.members) {
+        if (member.userId === event.actorUserId) continue;
+        await notifyUser({
+          userId: member.userId,
+          type: event.parentId
+            ? NotificationType.THREAD_REPLY
+            : NotificationType.MESSAGE,
+          title: event.parentId
+            ? `${actor} replied to your direct message`
+            : `${actor} sent you a direct message`,
+          body: event.parentId
+            ? `${actor} replied in your direct conversation.`
+            : `${actor} sent you a direct message.`,
+          actorId: event.actorUserId,
+          workspaceId: event.workspaceId,
+          resourceId: event.resourceId,
+          targetPath: `/app/messages/${event.conversationId}`,
+          dedupKey: `direct-message:${event.resourceId}:${member.userId}`,
+        });
+      }
+      return;
+    }
     if (event.type === "message.created") {
       const message = await prisma.message.findUnique({
         where: { id: event.resourceId },
@@ -295,6 +343,10 @@ export async function emitApplicationEvent(event: ApplicationEvent) {
       });
       if (!message) return;
       const name = await channelName(event.channelId);
+      const targetPath = await channelDestination(
+        event.channelId,
+        event.parentId ?? event.resourceId,
+      );
       for (const userId of new Set(
         message.mentions.map((mention) => mention.userId),
       )) {
@@ -308,7 +360,7 @@ export async function emitApplicationEvent(event: ApplicationEvent) {
           workspaceId: event.workspaceId,
           channelId: event.channelId,
           resourceId: event.resourceId,
-          targetPath: `/app/messages?channelId=${event.channelId}&messageId=${event.resourceId}`,
+          targetPath,
           dedupKey: `mention:${event.resourceId}:${userId}`,
         });
       }
@@ -332,7 +384,7 @@ export async function emitApplicationEvent(event: ApplicationEvent) {
             workspaceId: event.workspaceId,
             channelId: event.channelId,
             resourceId: event.resourceId,
-            targetPath: `/app/messages?channelId=${event.channelId}&messageId=${event.resourceId}`,
+            targetPath,
             dedupKey: `reply:${event.resourceId}:${userId}`,
           });
       }
@@ -354,7 +406,11 @@ export async function emitApplicationEvent(event: ApplicationEvent) {
         where: { id: event.resourceId },
         select: { authorId: true },
       });
-      if (message && message.authorId !== event.actorUserId)
+      if (message && message.authorId !== event.actorUserId) {
+        const targetPath = await channelDestination(
+          event.channelId,
+          event.parentId ?? event.resourceId,
+        );
         await notifyUser({
           userId: message.authorId,
           type: NotificationType.REACTION,
@@ -364,9 +420,10 @@ export async function emitApplicationEvent(event: ApplicationEvent) {
           workspaceId: event.workspaceId,
           channelId: event.channelId,
           resourceId: event.resourceId,
-          targetPath: `/app/messages?channelId=${event.channelId}&messageId=${event.resourceId}`,
+          targetPath,
           dedupKey: `reaction:${event.resourceId}:${event.actorUserId}:${event.emoji}`,
         });
+      }
       return;
     }
 
@@ -385,6 +442,7 @@ export async function emitApplicationEvent(event: ApplicationEvent) {
     }
 
     if (event.type === "channel.invited") {
+      const targetPath = await channelDestination(event.channelId);
       await notifyUser({
         userId: event.recipientUserId,
         type: NotificationType.CHANNEL_INVITATION,
@@ -394,7 +452,7 @@ export async function emitApplicationEvent(event: ApplicationEvent) {
         workspaceId: event.workspaceId,
         channelId: event.channelId,
         resourceId: event.resourceId,
-        targetPath: "/app/messages",
+        targetPath,
         dedupKey: `channel-invite:${event.resourceId}:${event.recipientUserId}`,
       });
       return;

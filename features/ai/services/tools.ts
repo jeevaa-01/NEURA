@@ -20,11 +20,11 @@ import {
   getChannelById,
   updateChannel,
 } from "@/features/workspaces/services/channel-service";
+import { createTask } from "@/features/tasks/services/task-service";
 import { WorkspaceError } from "@/features/workspaces/services/errors";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db/client";
-import { emitApplicationEvent } from "@/features/notifications";
-import { TaskStatus, WorkspaceRoleType } from "@/lib/generated/prisma/client";
+import { WorkspaceRoleType } from "@/lib/generated/prisma/client";
 
 import { AIError } from "./ai-errors";
 import type { ProviderTool } from "./provider";
@@ -542,28 +542,12 @@ const createTaskTool: RegisteredTool = {
       dueAt: string | null;
       assigneeId: string | null;
     };
-    await requireWorkspaceMembership(context.workspaceId, context.userId);
-    if (input.assigneeId)
-      await requireWorkspaceMembership(context.workspaceId, input.assigneeId);
-    const task = await prisma.workspaceTask.create({
-      data: {
-        workspaceId: context.workspaceId,
-        createdById: context.userId,
-        title: input.title,
-        description: input.description,
-        assigneeId: input.assigneeId,
-        dueAt: input.dueAt ? new Date(input.dueAt) : null,
-        status: TaskStatus.OPEN,
-      },
-      select: { id: true, title: true, status: true },
-    });
-    await emitApplicationEvent({
-      type: "task.created",
-      actorUserId: context.userId,
+    const task = await createTask(context.userId, {
       workspaceId: context.workspaceId,
-      resourceId: task.id,
-      title: task.title,
+      title: input.title,
+      description: input.description,
       assigneeId: input.assigneeId,
+      dueAt: input.dueAt,
     });
     return { entityId: task.id, title: task.title, status: task.status };
   },
@@ -648,6 +632,8 @@ export async function validateAIToolInput(
           "Every channel member must belong to the workspace.",
         );
     }
+    if (name === "create_task" && typeof value.assigneeId === "string")
+      await requireWorkspaceMembership(context.workspaceId, value.assigneeId);
   }
   return parsed.data;
 }

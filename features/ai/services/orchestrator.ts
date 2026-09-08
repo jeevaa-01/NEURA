@@ -53,6 +53,8 @@ export async function prepareAIRequest(input: {
   contextMode: AIContextMode;
   content: string;
 }): Promise<PreparedAIRequest> {
+  await enforceAIRateLimit(input.userId, input.workspaceId);
+
   let conversation;
   if (input.conversationId) {
     conversation = await requireAIConversation(
@@ -79,8 +81,6 @@ export async function prepareAIRequest(input: {
     });
     conversation = await requireAIConversation(created.id, input.userId);
   }
-
-  await enforceAIRateLimit(input.userId, input.workspaceId);
 
   const effectiveChannelId =
     input.contextMode === "channel"

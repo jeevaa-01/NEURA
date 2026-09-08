@@ -18,6 +18,7 @@ export function MessageThreadPanel({
   onEdit,
   onDelete,
   onToggleReaction,
+  allowAttachments = true,
 }: {
   thread: MessageThread;
   currentUserId: string;
@@ -25,7 +26,8 @@ export function MessageThreadPanel({
   archived: boolean;
   onClose: () => void;
   onReply: (content: string, attachmentIds: string[]) => Promise<void>;
-  channelId: string;
+  channelId?: string;
+  allowAttachments?: boolean;
   onTyping?: (isTyping: boolean) => void;
   onEdit: (message: MessageSummary, content: string) => Promise<void>;
   onDelete: (message: MessageSummary) => Promise<void>;
@@ -64,7 +66,7 @@ export function MessageThreadPanel({
             message={thread.parent}
             currentUserId={currentUserId}
             canModerate={canModerate}
-            onReply={() => undefined}
+            showReply={false}
             onEdit={(content) => onEdit(thread.parent, content)}
             onDelete={() => onDelete(thread.parent)}
             onToggleReaction={(emoji, reacted) =>
@@ -79,7 +81,7 @@ export function MessageThreadPanel({
               message={reply}
               currentUserId={currentUserId}
               canModerate={canModerate}
-              onReply={() => undefined}
+              showReply={false}
               onEdit={(content) => onEdit(reply, content)}
               onDelete={() => onDelete(reply)}
               onToggleReaction={(emoji, reacted) =>
@@ -97,6 +99,7 @@ export function MessageThreadPanel({
       <div className="border-t border-border-subtle p-4">
         <MessageComposer
           channelId={channelId}
+          allowAttachments={allowAttachments}
           onSubmit={(content, attachmentIds) => onReply(content, attachmentIds)}
           onTyping={onTyping}
           disabled={archived}

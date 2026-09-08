@@ -37,8 +37,10 @@
   --color-popover: var(--surface-elevated);
   --color-popover-foreground: var(--text-primary);
   --color-destructive: var(--danger);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
@@ -155,6 +157,16 @@
 
   .focus-ring {
     @apply outline-none focus-visible:ring-[3px] focus-visible:ring-accent/35;
+  }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media (max-width: 767px) {
+  body {
+    overflow-x: hidden;
   }
 }
 

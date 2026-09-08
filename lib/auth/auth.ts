@@ -4,6 +4,7 @@ import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 
 import { prisma } from "@/lib/db/client";
+import { sendEmail } from "@/lib/email/provider";
 import { clientEnv, serverEnv } from "@/lib/validations/env";
 
 /** Error code raised when a requested username is already registered. */
@@ -46,6 +47,10 @@ export const auth = betterAuth({
 
   baseURL,
   secret: env.BETTER_AUTH_SECRET,
+  // Keep origin validation aligned with the runtime deployment URL. This is
+  // important when a production image is reused behind a different local,
+  // LAN, or proxy origin than the build-time public URL.
+  trustedOrigins: [baseURL],
 
   // Reuses the Phase 1 Prisma singleton, so auth shares the application's
   // connection pool instead of opening one of its own.
@@ -61,9 +66,38 @@ export const auth = betterAuth({
     // Registration returns a live session, so the user lands in /app rather
     // than being bounced to a login form they just filled in.
     autoSignIn: true,
-    // Email delivery does not exist yet. Turning this on before there is a way
-    // to send the verification mail would lock every new account out.
+    sendResetPassword: async ({ user, url }) => {
+      try {
+        await sendEmail({
+          to: user.email,
+          subject: "Reset your NEURA password",
+          text: `Use this link to reset your NEURA password. It expires in one hour and can only be used once:\n\n${url}`,
+          html: `<p>Use this link to reset your NEURA password. It expires in one hour and can only be used once.</p><p><a href="${url}">Reset password</a></p>`,
+        });
+      } catch {
+        // Keep the response indistinguishable from an unknown address. Never
+        // log the recipient, reset token, provider response, or URL here.
+        console.error("[auth] password reset delivery failed");
+      }
+    },
+    resetPasswordTokenExpiresIn: 60 * 60,
+    revokeSessionsOnPasswordReset: true,
     requireEmailVerification: false,
+  },
+
+  // Verification delivery is wired and can be enabled when the deployment
+  // requires verified identities. Registration remains frictionless for V1.
+  emailVerification: {
+    sendVerificationEmail: async ({ user, url }) => {
+      await sendEmail({
+        to: user.email,
+        subject: "Verify your NEURA email",
+        text: `Verify your NEURA email address using this link:\n\n${url}`,
+        html: `<p>Verify your NEURA email address.</p><p><a href="${url}">Verify email</a></p>`,
+      });
+    },
+    expiresIn: 60 * 60,
+    sendOnSignUp: false,
   },
 
   session: {
@@ -100,6 +134,20 @@ export const auth = betterAuth({
   },
 
   databaseHooks: {
+    session: {
+      create: {
+        // Do not create a fresh credential session for a deactivated account.
+        // The shared session helper also checks this flag on every request,
+        // but rejecting creation closes the sign-in window at its source.
+        before: async (session) => {
+          const user = await prisma.user.findUnique({
+            where: { id: session.userId },
+            select: { isActive: true },
+          });
+          return user?.isActive === true;
+        },
+      },
+    },
     user: {
       create: {
         /**
@@ -146,6 +194,13 @@ export const auth = betterAuth({
       generateId: false,
     },
     cookiePrefix: "neura",
+    // Better Auth must use the same trusted proxy address as the outer Redis
+    // limiter. Without this, it falls back to one in-process bucket for every
+    // local/proxied client, making the documented credential limits collide
+    // across users and instances.
+    ipAddress: {
+      ipAddressHeaders: ["x-forwarded-for", "x-real-ip"],
+    },
     defaultCookieAttributes: {
       httpOnly: true,
       sameSite: "lax",
@@ -170,6 +225,12 @@ export const auth = betterAuth({
       // tighter budgets than the global default.
       "/sign-in/email": { window: 60, max: 5 },
       "/sign-up/email": { window: 300, max: 5 },
+      "/request-password-reset": { window: 300, max: 5 },
+      "/reset-password": { window: 300, max: 5 },
+      "/send-verification-email": { window: 300, max: 5 },
+      "/change-password": { window: 300, max: 5 },
+      "/update-user": { window: 300, max: 10 },
+      "/delete-user": { window: 300, max: 3 },
     },
   },
 

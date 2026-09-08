@@ -103,6 +103,7 @@ function MessageBubble({
         </span>
       )}
       <div
+        aria-label={user ? "Your message" : "NEURA response"}
         className={
           user
             ? "max-w-[88%] rounded-xl rounded-br-sm bg-accent px-4 py-3 text-[#0b0d12] shadow-[0_10px_30px_-22px_rgba(130,157,255,0.9)] sm:max-w-[80%]"
@@ -153,7 +154,7 @@ export function AIAssistantPanel({
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sources, setSources] = useState<KnowledgeCitation[]>([]);
-  const [showHistory, setShowHistory] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
   const [actions, setActions] = useState<AIActionSummary[]>([]);
 
   const workspace = useMemo(
@@ -403,9 +404,9 @@ export function AIAssistantPanel({
   const visibleMessages = conversation?.messages ?? [];
 
   return (
-    <div className="flex min-h-[calc(100vh-210px)] overflow-hidden rounded-xl border border-border-default bg-surface shadow-[0_20px_60px_-48px_rgba(0,0,0,0.9)]">
+    <div className="relative flex min-h-[calc(100vh-210px)] overflow-hidden rounded-xl border border-border-default bg-surface shadow-[0_20px_60px_-48px_rgba(0,0,0,0.9)]">
       <aside
-        className={`${showHistory ? "w-64" : "w-0"} shrink-0 overflow-hidden border-r border-border-subtle transition-[width]`}
+        className={`absolute inset-y-0 left-0 z-20 w-64 shrink-0 overflow-hidden border-r border-border-subtle bg-surface transition-[width,transform] md:static md:z-auto md:translate-x-0 ${showHistory ? "translate-x-0 md:w-64" : "-translate-x-full md:w-0"}`}
       >
         <div className="flex w-64 items-center justify-between border-b border-border-subtle p-4">
           <div>
@@ -481,6 +482,15 @@ export function AIAssistantPanel({
           )}
         </div>
       </aside>
+
+      {showHistory && (
+        <button
+          type="button"
+          className="absolute inset-0 z-10 bg-black/45 md:hidden"
+          onClick={() => setShowHistory(false)}
+          aria-label="Close conversation history"
+        />
+      )}
 
       <section className="flex min-w-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle bg-surface-elevated/30 p-4 sm:px-6">

@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  Bell,
   Bot,
   ChevronDown,
   Hash,
@@ -30,6 +31,8 @@ import { LogoMark } from "@/components/neura/logo-mark";
 import { Avatar } from "@/components/ui/avatar";
 import { SignOutButton } from "@/features/auth/components/sign-out-button";
 import { NotificationCenter } from "@/features/notifications/components/notification-center";
+import type { FavoriteChannelSummary } from "@/features/favorites/types";
+import type { DirectConversationSummary } from "@/features/messages/types";
 import { createWorkspaceAction } from "@/features/workspaces/actions/create-workspace";
 import type { WorkspaceSummary } from "@/features/workspaces/types";
 import { createWorkspaceSchema } from "@/features/workspaces/validations/create-workspace-schema";
@@ -54,6 +57,9 @@ const NAV_ITEMS: NavItem[] = [
 
 const COMMAND_ITEMS = [
   ...NAV_ITEMS,
+  { label: "Notifications", href: "/app/notifications", icon: Bell },
+  { label: "Profile", href: "/app/profile", icon: UserRound },
+  { label: "Settings", href: "/app/settings", icon: Settings },
   { label: "Search", href: "/app/search", icon: Search },
 ] as const;
 
@@ -91,18 +97,33 @@ function RailLink({ item, pathname }: { item: NavItem; pathname: string }) {
 function WorkspaceSidebar({
   open,
   onClose,
+  onCreateWorkspace,
   pathname,
   workspaces,
+  favorites,
+  conversations,
 }: {
   open: boolean;
   onClose: () => void;
+  onCreateWorkspace: () => void;
   pathname: string;
   workspaces: WorkspaceSummary[];
+  favorites: FavoriteChannelSummary[];
+  conversations: DirectConversationSummary[];
 }) {
   const activeSlug = pathname.match(/^\/app\/workspaces\/([^/]+)/)?.[1];
   const activeWorkspace = workspaces.find(
     (workspace) => workspace.slug === activeSlug,
   );
+  const channelWorkspace =
+    activeWorkspace ??
+    workspaces.find(
+      (workspace) => workspace.role === "OWNER" || workspace.role === "ADMIN",
+    );
+  const canCreateChannel = Boolean(channelWorkspace);
+  const channelCreateHref = channelWorkspace
+    ? `/app/workspaces/${channelWorkspace.slug}?create=channel`
+    : "#";
 
   return (
     <aside
@@ -137,20 +158,22 @@ function WorkspaceSidebar({
             </p>
           </div>
         </div>
-        <button
-          className="focus-ring rounded-md p-2 text-text-muted hover:bg-surface-hover hover:text-text-primary"
-          aria-label="Workspace options"
-          title="Workspace options"
-        >
-          <ChevronDown aria-hidden className="size-4" />
-        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-5">
         <div className="mb-7">
           <SectionLabel
             label="Workspaces"
-            action={<Plus aria-hidden className="size-3.5" />}
+            action={
+              <button
+                type="button"
+                onClick={onCreateWorkspace}
+                aria-label="Create workspace"
+                className="focus-ring inline-flex rounded p-1 hover:bg-surface-hover hover:text-text-primary"
+              >
+                <Plus aria-hidden className="size-3.5" />
+              </button>
+            }
           />
           {workspaces.length ? (
             <div className="mt-2 space-y-1">
@@ -182,24 +205,38 @@ function WorkspaceSidebar({
           )}
         </div>
         <div className="mb-7">
-          <SectionLabel
-            label="Favorites"
-            action={<Plus aria-hidden className="size-3.5" />}
-          />
-          <div className="mt-3 rounded-md border border-dashed border-border-default px-3 py-3 text-xs leading-5 text-text-muted">
-            Star important spaces for quick access.
-          </div>
+          <SectionLabel label="Favorites" action={null} />
+          {favorites.length ? (
+            <div className="mt-2 space-y-0.5">
+              {favorites.map((favorite) => (
+                <Link
+                  key={favorite.id}
+                  href={`/app/workspaces/${favorite.workspaceSlug}/channels/${favorite.channelSlug}`}
+                  onClick={onClose}
+                  className="focus-ring flex min-h-9 items-center gap-2 rounded-md px-2.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                >
+                  <span className="text-accent">★</span>
+                  <span className="truncate">{favorite.channelName}</span>
+                  <span className="ml-auto max-w-20 truncate text-[9px] text-text-muted">
+                    {favorite.workspaceSlug}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 rounded-md border border-dashed border-border-default px-3 py-3 text-xs leading-5 text-text-muted">
+              Star a channel to keep it here.
+            </div>
+          )}
         </div>
 
         <div className="mb-7">
           <SectionLabel
             label="Channels"
             action={
-              activeWorkspace &&
-              (activeWorkspace.role === "OWNER" ||
-                activeWorkspace.role === "ADMIN") ? (
+              canCreateChannel ? (
                 <Link
-                  href={`/app/workspaces/${activeWorkspace.slug}?create=channel`}
+                  href={channelCreateHref}
                   onClick={onClose}
                   aria-label="Create channel"
                   className="focus-ring inline-flex rounded p-1 hover:bg-surface-hover hover:text-text-primary"
@@ -207,7 +244,15 @@ function WorkspaceSidebar({
                   <Plus aria-hidden className="size-3.5" />
                 </Link>
               ) : (
-                <Plus aria-hidden className="size-3.5" />
+                <button
+                  type="button"
+                  disabled
+                  aria-label="Create channel unavailable"
+                  title="Only workspace owners and admins can create channels"
+                  className="inline-flex cursor-not-allowed rounded p-1 text-text-muted/50"
+                >
+                  <Plus aria-hidden className="size-3.5" />
+                </button>
               )
             }
           />
@@ -254,12 +299,41 @@ function WorkspaceSidebar({
         <div>
           <SectionLabel
             label="Direct messages"
-            action={<Plus aria-hidden className="size-3.5" />}
+            action={
+              <Link
+                href="/app/messages"
+                onClick={onClose}
+                aria-label="New direct message"
+                className="focus-ring inline-flex rounded p-1 hover:bg-surface-hover hover:text-text-primary"
+              >
+                <Plus aria-hidden className="size-3.5" />
+              </Link>
+            }
           />
-          <div className="mt-3 flex items-start gap-2 rounded-md bg-surface-elevated/60 px-2.5 py-3 text-xs leading-5 text-text-muted">
-            <MessageSquare aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-            <span>Your conversations will appear here.</span>
-          </div>
+          {conversations.length ? (
+            <div className="mt-2 space-y-0.5">
+              {conversations.slice(0, 8).map((conversation) => (
+                <Link
+                  key={conversation.id}
+                  href={`/app/messages/${conversation.id}`}
+                  onClick={onClose}
+                  className="focus-ring flex min-h-9 items-center gap-2 rounded-md px-2.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+                >
+                  <span className="flex size-5 items-center justify-center rounded-full bg-accent-muted text-[9px] font-semibold text-accent">
+                    {conversation.user.displayName.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="truncate">
+                    {conversation.user.displayName}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 flex items-start gap-2 rounded-md bg-surface-elevated/60 px-2.5 py-3 text-xs leading-5 text-text-muted">
+              <MessageSquare aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+              <span>Start a conversation from Messages.</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -470,10 +544,12 @@ function UserMenu({
   user,
   open,
   onToggle,
+  placement,
 }: {
   user: AppUser;
   open: boolean;
   onToggle: () => void;
+  placement: "rail" | "header";
 }) {
   return (
     <div className="relative">
@@ -507,7 +583,12 @@ function UserMenu({
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
-            className="absolute bottom-12 left-0 z-50 w-64 rounded-lg border border-border-strong bg-surface-elevated p-2 shadow-xl"
+            className={cn(
+              "absolute z-50 w-[min(256px,calc(100vw-1rem))] rounded-lg border border-border-strong bg-surface-elevated p-2 shadow-xl",
+              placement === "rail"
+                ? "bottom-0 left-[calc(100%+1rem)]"
+                : "top-12 right-0",
+            )}
             role="menu"
           >
             <div className="border-b border-border-default px-3 py-2.5">
@@ -518,6 +599,7 @@ function UserMenu({
             </div>
             <Link
               href="/app/profile"
+              onClick={onToggle}
               role="menuitem"
               className="focus-ring mt-1 flex min-h-10 items-center gap-2 rounded-md px-3 text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary"
             >
@@ -526,20 +608,13 @@ function UserMenu({
             </Link>
             <Link
               href="/app/settings"
+              onClick={onToggle}
               role="menuitem"
               className="focus-ring flex min-h-10 items-center gap-2 rounded-md px-3 text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary"
             >
               <Settings aria-hidden className="size-4" />
               Settings
             </Link>
-            <button
-              type="button"
-              role="menuitem"
-              className="focus-ring flex min-h-10 w-full items-center gap-2 rounded-md px-3 text-left text-sm text-text-muted hover:bg-surface-hover hover:text-text-primary"
-            >
-              <Sparkles aria-hidden className="size-4" />
-              Theme <span className="ml-auto text-[10px]">Soon</span>
-            </button>
             <div className="mt-1 border-t border-border-default pt-1">
               <SignOutButton />
             </div>
@@ -761,10 +836,14 @@ export function AppShell({
   children,
   user,
   workspaces,
+  favorites,
+  conversations,
 }: {
   children: ReactNode;
   user: AppUser;
   workspaces: WorkspaceSummary[];
+  favorites: FavoriteChannelSummary[];
+  conversations: DirectConversationSummary[];
 }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -827,14 +906,21 @@ export function AppShell({
           user={user}
           open={userOpen}
           onToggle={() => setUserOpen((open) => !open)}
+          placement="rail"
         />
       </nav>
 
       <WorkspaceSidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onCreateWorkspace={() => {
+          setWorkspaceOpen(true);
+          setSidebarOpen(false);
+        }}
         pathname={pathname}
         workspaces={workspaces}
+        favorites={favorites}
+        conversations={conversations}
       />
       {sidebarOpen && (
         <button
@@ -846,7 +932,7 @@ export function AppShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-[72px] shrink-0 items-center justify-between border-b border-border-subtle bg-background/90 px-4 backdrop-blur-md md:px-6">
+        <header className="relative z-50 flex h-[72px] shrink-0 items-center justify-between border-b border-border-subtle bg-background/90 px-4 backdrop-blur-md md:px-6">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -897,6 +983,7 @@ export function AppShell({
                 user={user}
                 open={userOpen}
                 onToggle={() => setUserOpen((open) => !open)}
+                placement="header"
               />
             </div>
           </div>
@@ -904,7 +991,7 @@ export function AppShell({
 
         <div className="flex min-h-0 flex-1">
           <main className="min-w-0 flex-1 overflow-y-auto bg-background/70">
-            <div className="mx-auto min-h-full w-full max-w-[1180px] px-5 py-8 pb-24 sm:px-8 lg:px-10 lg:py-10 lg:pb-10">
+            <div className="mx-auto min-h-full w-full max-w-[1180px] px-4 py-6 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-8 sm:py-8 lg:px-10 lg:py-10 lg:pb-10">
               {children}
             </div>
           </main>
@@ -968,7 +1055,7 @@ export function AppShell({
       </div>
 
       <nav
-        className="fixed right-0 bottom-0 left-0 z-20 flex h-16 items-center justify-around border-t border-border-subtle bg-surface/95 px-2 shadow-[0_-12px_32px_-24px_rgba(0,0,0,0.9)] backdrop-blur-md md:hidden"
+        className="safe-area-bottom fixed right-0 bottom-0 left-0 z-20 flex min-h-16 items-center justify-around border-t border-border-subtle bg-surface/95 px-1 py-1 shadow-[0_-12px_32px_-24px_rgba(0,0,0,0.9)] backdrop-blur-md md:hidden"
         aria-label="Mobile navigation"
       >
         {NAV_ITEMS.map((item) => {
@@ -979,7 +1066,7 @@ export function AppShell({
               key={item.href}
               href={item.href}
               className={cn(
-                "focus-ring flex min-w-14 flex-col items-center gap-1 rounded-md px-2 py-1.5 text-[10px] text-text-muted",
+                "focus-ring flex min-w-0 flex-1 flex-col items-center gap-1 rounded-md px-1 py-1.5 text-[10px] text-text-muted",
                 active && "text-accent",
               )}
               aria-current={active ? "page" : undefined}

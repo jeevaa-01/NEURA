@@ -227,8 +227,8 @@ model User {
   statusText  String? @map("status_text")
   isActive    Boolean @default(true) @map("is_active")
 
-  /// Required by Better Auth. Verification *delivery* is not implemented yet,
-  /// so this stays false until the email phase turns it on.
+  /// Required by Better Auth. Delivery is wired through the configured email
+  /// provider; V1 registration does not require verification by default.
   emailVerified Boolean @default(false) @map("email_verified")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -241,6 +241,7 @@ model User {
   workspaceMemberships    WorkspaceMember[]
   createdChannels         Channel[]
   channelMemberships      ChannelMember[]
+  favoriteChannels        FavoriteChannel[]
   createdConversations    Conversation[]
   conversationMemberships ConversationMember[]
   sentMessages            Message[]
@@ -369,6 +370,7 @@ model Channel {
   attachments Attachment[]
   notifications Notification[]
   activities ActivityEvent[]
+  favoritesByChannel FavoriteChannel[]
 
   // Channel slugs are unique per workspace, not globally.
   @@unique([workspaceId, slug])
@@ -403,6 +405,21 @@ model ChannelMember {
   // "Which private channels can this user see?"
   @@index([userId])
   @@map("channel_members")
+}
+
+/// A user's persisted shortcut to a channel they can access.
+model FavoriteChannel {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  channelId String   @map("channel_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+  @@index([channelId])
+  @@map("favorite_channels")
 }
 
 // ===========================================================================
@@ -1123,9 +1140,7 @@ model Session {
 
 /// Short-lived tokens for email verification and password reset.
 ///
-/// Unused in Phase 3 — neither flow delivers email yet — but the table is
-/// required by Better Auth and creating it now means the email phase is a
-/// configuration change rather than a migration.
+/// Better Auth's short-lived, single-use verification and reset records.
 model Verification {
   id         String   @id @default(uuid(7)) @db.Uuid
   identifier String

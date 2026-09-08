@@ -25,6 +25,13 @@ export interface VectorStore {
     queryVector: number[];
     limit: number;
   }): Promise<KnowledgeSearchResult[]>;
+  keywordSearch(input: {
+    workspaceId: string;
+    channelId?: string | null;
+    channelIds: string[];
+    query: string;
+    limit: number;
+  }): Promise<KnowledgeSearchResult[]>;
 }
 
 function vector(value: unknown) {
@@ -48,6 +55,26 @@ function cosine(left: number[], right: number[]) {
   return leftMagnitude && rightMagnitude
     ? dot / Math.sqrt(leftMagnitude * rightMagnitude)
     : 0;
+}
+
+function keywordTerms(query: string) {
+  return [
+    ...new Set(
+      query
+        .toLocaleLowerCase()
+        .split(/\s+/)
+        .map((term) => term.replace(/[^\p{L}\p{N}_-]/gu, ""))
+        .filter((term) => term.length > 1),
+    ),
+  ].slice(0, 8);
+}
+
+function keywordScore(content: string, terms: string[]) {
+  const normalized = content.toLocaleLowerCase();
+  const matched = terms.filter((term) => normalized.includes(term)).length;
+  const exact =
+    terms.length && terms.every((term) => normalized.includes(term));
+  return matched / Math.max(terms.length, 1) + (exact ? 0.25 : 0);
 }
 
 /**
@@ -183,6 +210,86 @@ export class PostgresJsonVectorStore implements VectorStore {
       })
       .filter((row): row is KnowledgeSearchResult => Boolean(row))
       .sort((a, b) => b.score - a.score)
+      .slice(0, input.limit);
+  }
+
+  async keywordSearch(input: {
+    workspaceId: string;
+    channelId?: string | null;
+    channelIds: string[];
+    query: string;
+    limit: number;
+  }) {
+    const terms = keywordTerms(input.query);
+    if (!terms.length) return [];
+    const rows = await prisma.knowledgeChunk.findMany({
+      where: {
+        workspaceId: input.workspaceId,
+        ...(input.channelId
+          ? { channelId: input.channelId }
+          : {
+              OR: [
+                { channelId: null },
+                ...(input.channelIds.length
+                  ? [{ channelId: { in: input.channelIds } }]
+                  : []),
+              ],
+            }),
+        document: {
+          status: "READY",
+          source: {
+            status: "READY",
+            OR: [
+              { attachmentId: null },
+              { attachment: { is: { status: { not: "DELETED" } } } },
+            ],
+          },
+        },
+        OR: terms.map((term) => ({
+          content: { contains: term, mode: "insensitive" },
+        })),
+      },
+      take: Math.min(Math.max(input.limit * 3, input.limit), 60),
+      select: {
+        id: true,
+        documentId: true,
+        channelId: true,
+        content: true,
+        chunkIndex: true,
+        document: {
+          select: {
+            title: true,
+            source: {
+              select: {
+                id: true,
+                type: true,
+                channel: { select: { name: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    return rows
+      .map(
+        (row) =>
+          ({
+            id: row.id,
+            sourceId: row.document.source.id,
+            documentId: row.documentId,
+            title: row.document.title,
+            sourceType: row.document.source.type,
+            channelId: row.channelId,
+            channelName: row.document.source.channel?.name ?? null,
+            chunkIndex: row.chunkIndex,
+            content: row.content,
+            score: keywordScore(row.content, terms),
+          }) satisfies KnowledgeSearchResult,
+      )
+      .sort(
+        (left, right) =>
+          right.score - left.score || left.chunkIndex - right.chunkIndex,
+      )
       .slice(0, input.limit);
   }
 }

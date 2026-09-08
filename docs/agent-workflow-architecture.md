@@ -11,6 +11,12 @@ repository is the only layer in the feature that talks to Prisma:
 
 `Workflow -> WorkflowExecution -> WorkflowStepExecution`
 
+Workflow owners can create, read, list, update, enable, disable, and archive
+definitions through validated Server Actions. Archive maps to `DISABLED` rather
+than a physical delete so execution history and step details remain readable.
+Re-enabling revalidates the stored definition, and execution still rejects any
+workflow that is not `READY`.
+
 `Workflow` stores a validated `{ trigger, steps }` definition and is scoped to
 one workspace and creator. `WorkflowExecution` stores the initiating user,
 conversation link, lifecycle, current step, timing, failure and result summary.

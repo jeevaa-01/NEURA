@@ -5,6 +5,7 @@ import {
   streamAIResponse,
 } from "@/features/ai/services/orchestrator";
 import { AIError, aiErrorStatus } from "@/features/ai/services/ai-errors";
+import { WorkspaceError } from "@/features/workspaces/services/errors";
 import { aiChatSchema } from "@/features/ai/validations/ai-schema";
 
 export const runtime = "nodejs";
@@ -19,6 +20,20 @@ function errorResponse(error: unknown) {
     return Response.json(
       { error: error.message, code: error.code },
       { status: aiErrorStatus(error.code) },
+    );
+  if (error instanceof WorkspaceError)
+    return Response.json(
+      {
+        error:
+          error.code === "UNAUTHENTICATED"
+            ? "Sign in required."
+            : "You do not have access to that workspace or channel.",
+        code:
+          error.code === "UNAUTHENTICATED"
+            ? "AI_UNAUTHENTICATED"
+            : "AI_FORBIDDEN",
+      },
+      { status: error.code === "UNAUTHENTICATED" ? 401 : 403 },
     );
   return Response.json(
     { error: "NEURA AI could not start that request." },
