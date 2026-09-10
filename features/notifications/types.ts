@@ -40,4 +40,5 @@ export type NotificationPreferences = {
   taskAssignments: boolean;
   aiActions: boolean;
   workflows: boolean;
+  dailyAgents: boolean;
 };

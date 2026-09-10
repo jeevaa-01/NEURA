@@ -5,6 +5,7 @@ import { PlatformPlaceholder } from "@/components/shared/platform-placeholder";
 import { getSession } from "@/lib/auth";
 import { getUserWorkspaces } from "@/features/workspaces/queries/get-user-workspaces";
 import { WorkflowManager } from "@/features/workflows/components/workflow-manager";
+import { DailyAgentManager } from "@/features/daily-agents/components/daily-agent-manager";
 
 export const metadata: Metadata = { title: "Agents" };
 
@@ -37,14 +38,16 @@ async function AgentsContent() {
             NEURA / AGENTS
           </p>
           <h1 className="text-3xl font-semibold tracking-[-0.03em] text-text-primary">
-            Agents & workflows
+            Agents & daily workflows
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-text-secondary">
-            Create bounded, observable workflows that use only the tools and
-            permissions already available to you.
+            Create topic agents that deliver daily briefs, plus bounded
+            workflows that use only the tools and permissions already available
+            to you.
           </p>
         </div>
       </header>
+      <DailyAgentManager workspaces={workspaces} />
       <WorkflowManager workspaces={workspaces} />
     </div>
   );

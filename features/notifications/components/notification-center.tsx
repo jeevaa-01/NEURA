@@ -100,6 +100,7 @@ function PreferenceControls({
     ["taskAssignments", "Task assignments"],
     ["aiActions", "AI actions"],
     ["workflows", "Workflows"],
+    ["dailyAgents", "Daily agents"],
   ];
   return (
     <div className="grid gap-2 sm:grid-cols-2">

@@ -12,6 +12,7 @@ export const notificationPreferencesSchema = z.object({
   taskAssignments: z.boolean(),
   aiActions: z.boolean(),
   workflows: z.boolean(),
+  dailyAgents: z.boolean(),
 });
 export const activityListSchema = z.object({
   workspaceId: z.uuid("Workspace not found.").optional(),

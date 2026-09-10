@@ -101,6 +101,7 @@ Production requires:
 3. A Node-compatible runtime capable of long-lived SSE responses.
 4. Private persistent storage outside the application’s public static assets.
 5. Transactional email when account email flows are enabled.
+6. A long-running daily-agent scheduler worker when daily topic delivery is enabled.
 
 OpenAI is optional. Without it, standard collaboration and keyword knowledge
 fallback remain available, while provider-dependent AI and semantic embedding
@@ -126,6 +127,7 @@ real values in the deployment secret manager; never commit them.
 | `RESEND_API_KEY` | With Resend | Resend API credential. | Yes | Supply through the secret manager only. |
 | `OPENAI_API_KEY` | Optional | Enables live AI and semantic embeddings. | Yes | Supply only when AI is enabled; never expose to the browser. |
 | `OPENAI_MODEL` | Optional | OpenAI chat model name. | No | Defaults to `gpt-5-mini`; set deliberately if changed. |
+| `DAILY_AGENT_POLL_INTERVAL_MS` | Optional | Scheduler polling interval for due daily agents. | No | Defaults to `60000`; minimum `15000`. |
 | `AI_MAX_OUTPUT_TOKENS` | Optional | Maximum AI output size. | No | Defaults to `800`; allowed range is 64–4000. |
 
 ### Knowledge and file limits
@@ -176,9 +178,11 @@ The existing `Dockerfile` is a multi-stage build:
 - `production-deps` removes development dependencies.
 - `runner` runs the app as non-root user `nextjs` and mounts `/data/storage`.
 
-The production Compose profile contains `postgres`, `redis`, `migrate`, and
-`app`. The app waits for healthy PostgreSQL, healthy Redis, and successful
-migrations. PostgreSQL and Redis use named persistent volumes. The app is
+The production Compose profile contains `postgres`, `redis`, `migrate`, `app`,
+and `daily-agent-scheduler`. The app waits for healthy PostgreSQL, healthy
+Redis, and successful migrations. The scheduler starts after the app health
+check and polls the authenticated internal daily-agent endpoint. PostgreSQL and
+Redis use named persistent volumes. The app is
 published on host port `APP_PORT` (default `3000`) and the local Compose file
 binds it to IPv4 loopback.
 

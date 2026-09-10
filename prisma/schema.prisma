@@ -84,6 +84,7 @@ enum NotificationType {
   WORKFLOW_FAILED
   KNOWLEDGE_INDEXED
   KNOWLEDGE_INDEX_FAILED
+  DAILY_AGENT
 
   @@map("notification_type")
 }
@@ -201,6 +202,21 @@ enum WorkflowStepStatus {
   @@map("workflow_step_status")
 }
 
+enum DailyAgentStatus {
+  ACTIVE
+  PAUSED
+
+  @@map("daily_agent_status")
+}
+
+enum DailyAgentRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+
+  @@map("daily_agent_run_status")
+}
+
 // ===========================================================================
 // Identity
 // ===========================================================================
@@ -262,6 +278,7 @@ model User {
   aiActions                AIAction[]
   createdWorkflows         Workflow[] @relation("WorkflowCreator")
   workflowExecutions       WorkflowExecution[] @relation("WorkflowInitiator")
+  createdDailyAgents       DailyAgent[] @relation("DailyAgentCreator")
 
   // Chronological listings for administration and analytics. `email` and
   // `username` already carry unique indexes and need no separate entry.
@@ -302,6 +319,7 @@ model Workspace {
   aiActions       AIAction[]
   workflows       Workflow[]
   workflowExecutions WorkflowExecution[]
+  dailyAgents     DailyAgent[]
 
   // "Workspaces owned by this user", and an index for the FK so that owner
   // lookups do not degrade into sequential scans.
@@ -371,6 +389,7 @@ model Channel {
   notifications Notification[]
   activities ActivityEvent[]
   favoritesByChannel FavoriteChannel[]
+  dailyAgents DailyAgent[]
 
   // Channel slugs are unique per workspace, not globally.
   @@unique([workspaceId, slug])
@@ -519,6 +538,7 @@ model Message {
   mentions      MessageMention[]
   attachments   Attachment[]
   notifications Notification[]
+  dailyAgentRun DailyAgentRun?
 
   // Cursor pagination over a channel: seek on (created_at, id) so that messages
   // sharing a timestamp still have a total order and no row is skipped or
@@ -807,6 +827,52 @@ model WorkflowStepExecution {
   @@map("workflow_step_executions")
 }
 
+/// A user-owned daily topic agent. It publishes one generated message to a
+/// selected channel each local calendar day when the production scheduler runs.
+model DailyAgent {
+  id           String           @id @default(uuid(7)) @db.Uuid
+  workspaceId  String           @map("workspace_id") @db.Uuid
+  createdById  String           @map("created_by_id") @db.Uuid
+  channelId    String           @map("channel_id") @db.Uuid
+  name         String
+  topic        String
+  scheduleTime String           @default("09:00") @map("schedule_time")
+  timezone     String           @default("UTC")
+  status       DailyAgentStatus @default(ACTIVE)
+  nextRunAt    DateTime         @map("next_run_at") @db.Timestamptz(3)
+  lastRunAt    DateTime?        @map("last_run_at") @db.Timestamptz(3)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  creator   User      @relation("DailyAgentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  channel   Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  runs      DailyAgentRun[]
+
+  @@index([status, nextRunAt])
+  @@index([workspaceId, createdById, updatedAt])
+  @@map("daily_agents")
+}
+
+/// Idempotency and observability record for one agent's local calendar day.
+model DailyAgentRun {
+  id           String             @id @default(uuid(7)) @db.Uuid
+  agentId      String             @map("agent_id") @db.Uuid
+  runDate      DateTime           @map("run_date") @db.Date
+  status       DailyAgentRunStatus @default(RUNNING)
+  messageId    String?            @unique @map("message_id") @db.Uuid
+  errorMessage String?            @map("error_message")
+  startedAt    DateTime           @default(now()) @map("started_at") @db.Timestamptz(3)
+  completedAt  DateTime?          @map("completed_at") @db.Timestamptz(3)
+
+  agent   DailyAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  message Message?   @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@unique([agentId, runDate])
+  @@index([agentId, startedAt])
+  @@map("daily_agent_runs")
+}
+
 // ===========================================================================
 // Knowledge and RAG
 // ===========================================================================
@@ -947,6 +1013,7 @@ model NotificationPreference {
   taskAssignments Boolean  @default(true) @map("task_assignments")
   aiActions       Boolean  @default(true) @map("ai_actions")
   workflows       Boolean  @default(true)
+  dailyAgents     Boolean  @default(true) @map("daily_agents")
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

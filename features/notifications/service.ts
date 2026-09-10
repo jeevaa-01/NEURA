@@ -36,6 +36,7 @@ const preferenceForType: Partial<
   [NotificationType.AI_ACTION_FAILED]: "aiActions",
   [NotificationType.WORKFLOW_COMPLETED]: "workflows",
   [NotificationType.WORKFLOW_FAILED]: "workflows",
+  [NotificationType.DAILY_AGENT]: "dailyAgents",
 };
 
 function safeText(value: string, max: number) {
@@ -184,6 +185,7 @@ export async function notifyUser(input: {
       taskAssignments: true,
       aiActions: true,
       workflows: true,
+      dailyAgents: true,
     },
   });
   const preferenceKey = preferenceForType[input.type];
@@ -726,6 +728,7 @@ export async function getNotificationPreferences(
     taskAssignments: row?.taskAssignments ?? true,
     aiActions: row?.aiActions ?? true,
     workflows: row?.workflows ?? true,
+    dailyAgents: row?.dailyAgents ?? true,
   };
 }
 
@@ -744,6 +747,7 @@ export async function updateNotificationPreferences(
       taskAssignments: true,
       aiActions: true,
       workflows: true,
+      dailyAgents: true,
     },
   });
 }

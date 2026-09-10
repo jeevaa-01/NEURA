@@ -103,10 +103,14 @@ docker compose --profile production up -d --build
 ```
 
 The `migrate` one-shot service runs `prisma migrate deploy` against healthy
-PostgreSQL before the `app` service starts. The app runs as a non-root user and
-uploads are stored in the named `neura_app_storage` volume. Restart with
-`docker compose --profile production restart app`; inspect with
-`docker compose --profile production ps` and `docker compose logs app`.
+PostgreSQL before the `app` service starts. The `daily-agent-scheduler` service
+polls the internal scheduler endpoint and delivers each active topic agent at
+most once per configured local day. It starts only after the app health check
+passes and uses `BETTER_AUTH_SECRET` as a server-only request token. The app
+runs as a non-root user and uploads are stored in the named
+`neura_app_storage` volume. Restart with `docker compose --profile production
+restart app`; inspect with `docker compose --profile production ps` and
+`docker compose logs app daily-agent-scheduler`.
 
 ## 6. File storage
 

@@ -33,4 +33,5 @@ export { canAccessChannel } from "./services/channel-membership-service";
 export { listAccessibleChannels } from "./services/channel-service";
 export { requireWorkspaceMembership } from "./services/authorization";
 export { requireWorkspaceRole } from "./services/authorization";
+export { requireWorkspaceAdminOrOwner } from "./services/authorization";
 export type * from "./types";

@@ -346,6 +346,7 @@ NEURA/
 
 ## 11. Release documentation
 
+- [Android app](docs/android.md)
 - [Deployment handoff](docs/DEPLOYMENT_HANDOFF.md)
 - [Deployment guide](docs/deployment.md)
 - [Launch checklist](docs/launch-checklist.md)

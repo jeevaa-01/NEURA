@@ -16,6 +16,7 @@ tags:
   - name: Files
   - name: Account
   - name: Realtime
+  - name: Agents
 paths:
   /api/auth/{authPath}:
     parameters:
@@ -330,6 +331,41 @@ paths:
         "429": { $ref: "#/components/responses/RateLimited" }
         "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
+  /api/agents/daily/run:
+    post:
+      tags: [Agents]
+      summary: Run due daily topic agents
+      security: [{ schedulerToken: [] }]
+      description: >-
+        Internal scheduler endpoint. It executes active agents whose next run
+        is due and is protected by the server-only scheduler token.
+      parameters:
+        - name: x-neura-scheduler-token
+          in: header
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Due-agent execution results.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [checked, results]
+                properties:
+                  checked: { type: integer, minimum: 0 }
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [agentId, result]
+                      properties:
+                        agentId: { type: string, format: uuid }
+                        result:
+                          { $ref: "#/components/schemas/DailyAgentDelivery" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "500": { $ref: "#/components/responses/ServerError" }
+
 components:
   securitySchemes:
     sessionCookie:
@@ -337,6 +373,11 @@ components:
       in: cookie
       name: neura.session_token
       description: Better Auth session cookie; exact secure attributes depend on the deployment origin.
+    schedulerToken:
+      type: apiKey
+      in: header
+      name: x-neura-scheduler-token
+      description: Server-only scheduler token; never expose it to browser clients.
   parameters:
     Query:
       name: q
@@ -502,3 +543,10 @@ components:
         relevance: { type: number }
         href: { type: string }
         metadata: { type: object, additionalProperties: true }
+    DailyAgentDelivery:
+      type: object
+      required: [status, messageId, errorMessage]
+      properties:
+        status: { type: string, enum: [RUNNING, SUCCEEDED, FAILED, SKIPPED] }
+        messageId: { type: string, format: uuid, nullable: true }
+        errorMessage: { type: string, nullable: true }

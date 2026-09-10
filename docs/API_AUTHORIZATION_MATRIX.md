@@ -17,11 +17,13 @@ data only and never as proof of authority.
 | `/api/account/avatar/{id}` | GET | User | Own current avatar | Version/path must match active session user's stored avatar | Private image bytes | No route limiter; private authorization |
 | `/api/realtime` | GET | User | One channel or conversation | Channel membership/private access or conversation membership | Messages, presence, typing | 30 connections/user/minute; fail-closed |
 | `/api/realtime/notifications` | GET | User | Own notification topic | Session user ID is the topic key | Own notification events | 30 connections/user/minute; fail-closed |
+| `/api/agents/daily/run` | POST | Internal scheduler | Due active daily agents | Exact server-only `x-neura-scheduler-token`; no browser/session access | Aggregated run status only | Scheduler polling interval |
 | Workspace actions | Create/update/delete/membership/invites | User | One workspace | Owner/admin/active member rules per operation | Workspace and member data | Existing action-specific controls; no new limiter added |
 | Channel actions | CRUD/membership/archive/favorite | User | One workspace/channel | Active workspace role and channel/private membership | Private channel data | Existing action controls |
 | Message actions | Send/edit/delete/read/thread/reaction | User | Channel or conversation | Channel access, conversation membership, author/manager mutation rules | Message content/attachments | Existing action controls |
 | Task actions | CRUD/status/assignment | User | One workspace/task | Active member; creator/owner/admin mutations; assignee status-only | Task details | Session/workspace checks; no separate limiter |
 | Workflow actions | Definition CRUD/status/run/history | User | One workspace/workflow/execution | Existing workflow owner plus active workspace membership | Definitions, execution results | AI rate limit for create/update/status/run/validation |
+| Daily agent actions | Create/list/update/pause/run | User | One workspace/agent | Active member manages own agents; owner/admin manages all workspace agents | Agent topic, schedule, and delivery state | Session/workspace checks |
 | Knowledge actions | Source CRUD/retry/retrieval | User | Workspace/source/channel | Active workspace and channel access | Indexed document content/citations | Existing AI/indexing limits |
 | AI actions | Propose/confirm/execute/cancel | User | Workspace/conversation/action | Action owner, workspace authorization, confirmation-time reauthorization | Tool payload/results | AI limiter; confirmation required for writes |
 | Profile/preferences | Update own profile/preferences | User | Own account | Session user only | Profile/preferences | Profile 30/min; account controls fail-closed |

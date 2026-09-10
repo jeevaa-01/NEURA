@@ -84,7 +84,7 @@ services:
     ports:
       # Bind the local app port on IPv4 so localhost-based browser checks do
       # not get trapped by Docker Desktop's non-serving IPv6 forwarder.
-      - "127.0.0.1:${APP_PORT:-3000}:3000"
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
     volumes:
       - app_storage:/data/storage
     depends_on:
@@ -118,6 +118,23 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-neura}:${POSTGRES_PASSWORD:-neura_dev_password}@postgres:5432/${POSTGRES_DB:-neura}?schema=public
     depends_on:
       postgres:
+        condition: service_healthy
+
+  daily-agent-scheduler:
+    profiles: ["production"]
+    image: neura-app
+    container_name: neura-daily-agent-scheduler
+    restart: unless-stopped
+    command: ["node", "scripts/daily-agent-scheduler.mjs"]
+    environment:
+      NODE_ENV: production
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
+      DAILY_AGENT_ENDPOINT: http://app:3000/api/agents/daily/run
+      DAILY_AGENT_POLL_INTERVAL_MS: ${DAILY_AGENT_POLL_INTERVAL_MS:-60000}
+    healthcheck:
+      disable: true
+    depends_on:
+      app:
         condition: service_healthy
 
 volumes:

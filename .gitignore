@@ -44,6 +44,12 @@ next-env.d.ts
 
 /lib/generated/prisma
 
+# Capacitor Android build output and machine-local SDK settings
+/android/.gradle/
+/android/local.properties
+/android/build/
+/android/app/build/
+
 # Local private file uploads
 /storage/
 /.local-email-inbox/

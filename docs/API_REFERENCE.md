@@ -34,6 +34,7 @@ The repository contains 11 HTTP route files and 13 method/path operations:
 | `/api/account/avatar/[avatarId]` | GET | Private binary image |
 | `/api/realtime` | GET | Channel or conversation SSE |
 | `/api/realtime/notifications` | GET | User notification SSE |
+| `/api/agents/daily/run` | POST | Internal due daily-agent scheduler trigger |
 
 See [openapi.yaml](openapi.yaml) for parameters and schemas. The auth wildcard
 is delegated to Better Auth and its exact operation list is library-defined.

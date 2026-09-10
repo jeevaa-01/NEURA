@@ -120,7 +120,10 @@ export class OpenAIProvider implements AIProvider {
       } catch {
         // Keep provider internals out of the user-facing error.
       }
-      throw new AIError("AI_PROVIDER_ERROR", providerMessage);
+      throw new AIError(
+        response.status === 429 ? "AI_RATE_LIMITED" : "AI_PROVIDER_ERROR",
+        providerMessage,
+      );
     }
     if (!response.body)
       throw new AIError(

@@ -7,3 +7,8 @@ lib/generated
 prisma/migrations
 package-lock.json
 *.md
+
+# Capacitor regenerates these files during every sync.
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/app/src/main/assets/public
