@@ -27,6 +27,11 @@ npm run android:sync
 The Android device and development machine must be on the same network, and
 the app server must be reachable from that device.
 
+Keep `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`, and `CAPACITOR_SERVER_URL` on
+the same canonical origin for each environment. Do not mix `localhost`,
+`127.0.0.1`, or a LAN address: Better Auth intentionally rejects origins that
+are not explicitly configured.
+
 ## Production build
 
 Always use the deployed HTTPS origin for a release build:

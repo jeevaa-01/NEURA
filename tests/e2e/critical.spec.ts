@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { liveAIConfigured, runE2E } from "./e2e-env";
+import { cleanupWorkspace } from "./test-data";
 
 // The E2E runner is intentionally opt-in because it requires real local
 // PostgreSQL, Redis, and a running application.
@@ -40,14 +41,22 @@ test.describe("NEURA V1 critical browser smoke", () => {
       expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width);
     };
 
-    await page.locator('button[aria-haspopup="menu"]:visible').click();
+    await page
+      .locator(
+        'button[aria-haspopup="menu"]:not([data-nextjs-dev-tools-button]):visible',
+      )
+      .click();
     await assertUserMenuFitsViewport();
     await page.getByRole("menuitem", { name: "Profile" }).click();
     await expect(page).toHaveURL(/\/app\/profile$/);
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/app");
-    await page.locator('button[aria-haspopup="menu"]:visible').click();
+    await page
+      .locator(
+        'button[aria-haspopup="menu"]:not([data-nextjs-dev-tools-button]):visible',
+      )
+      .click();
     await assertUserMenuFitsViewport();
     await page.getByRole("menuitem", { name: "Settings" }).click();
     await expect(page).toHaveURL(/\/app\/settings$/);
@@ -65,6 +74,9 @@ test.describe("NEURA V1 critical browser smoke", () => {
       .getByRole("button", { name: "Create workspace" })
       .click();
     await expect(page).toHaveURL(/\/app\/workspaces\//);
+    const workspaceSlug = new URL(page.url()).pathname
+      .split("/")
+      .filter(Boolean)[2];
 
     // The global sidebar must route channel creation to the first workspace
     // the current user can manage, even while the user is on /app.
@@ -360,13 +372,17 @@ test.describe("NEURA V1 critical browser smoke", () => {
       ),
     ).toBeVisible();
 
-    // Account deactivation is intentionally a V1 soft lifecycle operation:
-    // it revokes all sessions and preserves authored workspace history.
+    // Account deactivation is intentionally a V1 soft lifecycle operation.
+    // Cleanup must run before that lifecycle transition removes the owner's
+    // session.
+    // before that lifecycle transition removes the owner's session.
     await page.goto("/login");
     await page.getByLabel("Email").fill(`e2e-${suffix}@example.com`);
     await page.getByLabel("Password", { exact: true }).fill("LaunchTest123!");
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/\/app$/);
+    await cleanupWorkspace(page, workspaceSlug);
+
     await page.goto("/app/settings");
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Deactivate account" }).click();

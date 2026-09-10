@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { runE2E } from "./e2e-env";
+import { cleanupWorkspace } from "./test-data";
 
 test.describe("NEURA task lifecycle", () => {
   test.skip(
@@ -21,6 +22,9 @@ test.describe("NEURA task lifecycle", () => {
     });
     await register(page, suffix);
     const workspaceUrl = await createWorkspace(page, suffix);
+    const workspaceSlug = new URL(workspaceUrl).pathname
+      .split("/")
+      .filter(Boolean)[2];
     await page.goto(workspaceUrl);
 
     const tasks = page.getByRole("region", { name: "Workspace tasks" });
@@ -87,6 +91,7 @@ test.describe("NEURA task lifecycle", () => {
         .getByRole("region", { name: "Workspace tasks" })
         .getByText(updatedTitle, { exact: true }),
     ).toHaveCount(0);
+    await cleanupWorkspace(page, workspaceSlug);
   });
 });
 

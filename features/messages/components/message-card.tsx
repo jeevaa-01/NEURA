@@ -236,7 +236,7 @@ function AttachmentCard({ attachment }: { attachment: AttachmentSummary }) {
       <Image
         src={href}
         alt={attachment.fileName}
-        width={140}
+        width={144}
         height={96}
         unoptimized
         className="h-24 w-36 object-cover"

@@ -1,5 +1,6 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { runE2E } from "./e2e-env";
+import { cleanupWorkspace } from "./test-data";
 
 // Realtime E2E is intentionally opt-in because it requires the running app
 // plus real PostgreSQL and Redis services.
@@ -41,11 +42,12 @@ test.describe("NEURA realtime browser flows", () => {
     });
     const pageA = await contextA.newPage();
     const pageB = await contextB.newPage();
+    let workspaceSlug: string | undefined;
 
     try {
       await Promise.all([register(pageA, userA), register(pageB, userB)]);
 
-      const workspaceSlug = await createWorkspace(pageA, suffix);
+      workspaceSlug = await createWorkspace(pageA, suffix);
       const invitationUrl = await inviteUser(pageA, workspaceSlug, userB.email);
       await acceptInvitation(pageB, invitationUrl);
 
@@ -439,6 +441,7 @@ test.describe("NEURA realtime browser flows", () => {
         1,
       );
     } finally {
+      await cleanupWorkspace(pageA, workspaceSlug);
       await closeContext(contextA);
       await closeContext(contextB);
     }

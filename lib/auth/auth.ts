@@ -6,6 +6,7 @@ import { nextCookies } from "better-auth/next-js";
 import { prisma } from "@/lib/db/client";
 import { sendEmail } from "@/lib/email/provider";
 import { clientEnv, serverEnv } from "@/lib/validations/env";
+import { resolveCanonicalOrigin } from "./origin";
 
 /** Error code raised when a requested username is already registered. */
 export const USERNAME_TAKEN_CODE = "USERNAME_TAKEN";
@@ -27,7 +28,10 @@ export const USERNAME_TAKEN_CODE = "USERNAME_TAKEN";
 
 const env = serverEnv();
 /** Single-origin deployment: auth lives on the app origin unless overridden. */
-const baseURL = env.BETTER_AUTH_URL ?? clientEnv.NEXT_PUBLIC_APP_URL;
+const baseURL = resolveCanonicalOrigin(
+  clientEnv.NEXT_PUBLIC_APP_URL,
+  env.BETTER_AUTH_URL,
+);
 
 /**
  * Derived from the origin's protocol rather than `NODE_ENV`.

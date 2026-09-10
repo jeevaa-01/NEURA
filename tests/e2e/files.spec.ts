@@ -1,5 +1,6 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { runE2E } from "./e2e-env";
+import { cleanupWorkspace } from "./test-data";
 
 // File E2E is intentionally opt-in because it requires the running app,
 // PostgreSQL, Redis, and the private storage volume.
@@ -37,6 +38,7 @@ test.describe("NEURA private file flows", () => {
       0x41, 0x2d, 0x46, 0x49, 0x4c, 0x45,
     ]);
 
+    let workspaceSlug: string | undefined;
     const contextA = await browser.newContext();
     const contextB = await browser.newContext();
     await contextA.setExtraHTTPHeaders({
@@ -51,7 +53,7 @@ test.describe("NEURA private file flows", () => {
     try {
       await Promise.all([register(pageA, userA), register(pageB, userB)]);
 
-      const workspaceSlug = await createWorkspace(pageA, suffix);
+      workspaceSlug = await createWorkspace(pageA, suffix);
       await createChannel(pageA, workspaceSlug, suffix);
       const channelId = await channelIdFromPage(pageA);
 
@@ -132,6 +134,7 @@ test.describe("NEURA private file flows", () => {
       );
       expect(unauthorizedRetry.status()).toBe(400);
     } finally {
+      await cleanupWorkspace(pageA, workspaceSlug);
       await closeContext(contextA);
       await closeContext(contextB);
     }

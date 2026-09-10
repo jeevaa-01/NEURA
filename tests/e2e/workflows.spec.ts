@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { runE2E } from "./e2e-env";
+import { cleanupWorkspace } from "./test-data";
 
 test.describe("NEURA workflow lifecycle", () => {
   test.skip(
@@ -20,6 +21,9 @@ test.describe("NEURA workflow lifecycle", () => {
     });
     await register(page, suffix);
     await createWorkspace(page, suffix);
+    const workspaceSlug = new URL(page.url()).pathname
+      .split("/")
+      .filter(Boolean)[2];
     await page.goto("/app/agents");
 
     const originalName = `Lifecycle workflow ${suffix}`;
@@ -79,6 +83,7 @@ test.describe("NEURA workflow lifecycle", () => {
     await expect(
       page.getByText("Completed all 2 workflow steps.", { exact: false }),
     ).toBeVisible();
+    await cleanupWorkspace(page, workspaceSlug);
   });
 });
 

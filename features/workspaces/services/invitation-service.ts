@@ -8,6 +8,7 @@ import {
 } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/db/client";
 import { clientEnv, serverEnv } from "@/lib/validations/env";
+import { resolveCanonicalOrigin } from "@/lib/auth/origin";
 
 import type { InvitationStatus, InvitationSummary } from "../types";
 
@@ -34,7 +35,10 @@ export function hashInvitationToken(token: string) {
 }
 
 export function getInvitationUrl(token: string) {
-  const baseURL = serverEnv().BETTER_AUTH_URL ?? clientEnv.NEXT_PUBLIC_APP_URL;
+  const baseURL = resolveCanonicalOrigin(
+    clientEnv.NEXT_PUBLIC_APP_URL,
+    serverEnv().BETTER_AUTH_URL,
+  );
   return `${baseURL}/invite/${token}`;
 }
 

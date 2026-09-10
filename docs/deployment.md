@@ -67,6 +67,12 @@ values in the browser bundle:
 | `FILE_STORAGE_ROOT` | Yes | Private persistent storage directory. |
 | `FILE_*` / `KNOWLEDGE_*` | Optional | Server-side size and processing limits. |
 
+Use one canonical origin per environment. Set `BETTER_AUTH_URL` to that same
+origin when it is present; it is normalized to an origin and is the only
+trusted Better Auth browser origin. `localhost`, `127.0.0.1`, and a LAN
+hostname are different origins and must not be mixed between the browser,
+`NEXT_PUBLIC_APP_URL`, and `BETTER_AUTH_URL`.
+
 For Docker builds, provide the public origin before building so the build-time
 and runtime values agree:
 
