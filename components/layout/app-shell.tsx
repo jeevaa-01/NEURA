@@ -1029,24 +1029,6 @@ export function AppShell({
                       Operational
                     </p>
                   </div>
-                  <div className="mt-4 rounded-lg border border-dashed border-border-default p-4">
-                    <div className="flex items-center gap-2 text-text-muted">
-                      <Activity aria-hidden className="size-4" />
-                      <p className="text-xs font-medium">Recent activity</p>
-                    </div>
-                    <p className="mt-3 text-xs leading-5 text-text-muted">
-                      Activity will surface here as your workspace gets moving.
-                    </p>
-                  </div>
-                  <div className="mt-4 rounded-lg border border-dashed border-border-default p-4">
-                    <div className="flex items-center gap-2 text-accent">
-                      <Sparkles aria-hidden className="size-4" />
-                      <p className="text-xs font-medium">NEURA intelligence</p>
-                    </div>
-                    <p className="mt-3 text-xs leading-5 text-text-muted">
-                      Workspace intelligence will appear here.
-                    </p>
-                  </div>
                 </div>
               </motion.aside>
             )}

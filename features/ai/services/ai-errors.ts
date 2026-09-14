@@ -5,6 +5,7 @@ export type AIErrorCode =
   | "AI_NOT_FOUND"
   | "AI_INVALID_INPUT"
   | "AI_RATE_LIMITED"
+  | "AI_QUOTA_EXCEEDED"
   | "AI_PROVIDER_ERROR"
   | "AI_TIMEOUT"
   | "AI_TOOL_ERROR";
@@ -31,6 +32,8 @@ export function aiErrorStatus(code: AIErrorCode) {
       return 400;
     case "AI_RATE_LIMITED":
       return 429;
+    case "AI_QUOTA_EXCEEDED":
+      return 503;
     case "AI_NOT_CONFIGURED":
       return 503;
     default:

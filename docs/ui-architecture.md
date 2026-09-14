@@ -15,7 +15,7 @@ The desktop shell is composed of four layers:
 1. A 72px global rail for primary destinations and the user menu.
 2. A 260px workspace sidebar for favorites, channels and direct messages.
 3. A flexible main content area for route-specific product surfaces.
-4. An optional 304px context panel for system status and future intelligence.
+4. An optional 304px context panel for system status.
 
 The context panel is intentionally a UI placeholder. It does not represent
 fake workspace activity or generated AI content.

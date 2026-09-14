@@ -11,7 +11,6 @@ import {
 import Link from "next/link";
 
 import { CreateWorkspaceButton } from "@/components/shared/create-workspace-button";
-import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { getSession } from "@/lib/auth";
@@ -225,7 +224,7 @@ export default async function AppHomePage() {
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+      <section>
         <div className="rounded-lg border border-border-default bg-surface">
           <div className="flex items-center justify-between border-b border-border-subtle px-5 py-4">
             <div>
@@ -258,17 +257,6 @@ export default async function AppHomePage() {
               </p>
             </div>
           </div>
-        </div>
-        <div className="rounded-lg border border-accent/25 bg-accent-muted/20 p-5">
-          <div className="flex items-center gap-2 text-accent">
-            <Sparkles aria-hidden className="size-4" />
-            <p className="text-sm font-semibold">NEURA intelligence</p>
-          </div>
-          <EmptyState
-            className="min-h-40 px-0 py-4"
-            title="Intelligence is standing by"
-            description="Your workspace intelligence will appear here once your communication layer has a signal to work with."
-          />
         </div>
       </section>
     </div>

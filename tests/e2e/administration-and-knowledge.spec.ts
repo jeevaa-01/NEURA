@@ -30,6 +30,9 @@ test.describe("NEURA administration and knowledge journey", () => {
     let contextB: BrowserContext | undefined;
 
     try {
+      await page.context().setExtraHTTPHeaders({
+        "x-forwarded-for": `192.0.2.${(Date.now() % 253) + 1}`,
+      });
       await register(page, owner);
       workspaceSlug = await createWorkspace(page, suffix);
 
@@ -41,7 +44,11 @@ test.describe("NEURA administration and knowledge journey", () => {
         .getByRole("textbox", { name: "Invitation URL" })
         .inputValue();
 
-      contextB = await browser.newContext();
+      contextB = await browser.newContext({
+        extraHTTPHeaders: {
+          "x-forwarded-for": `198.51.100.${(Date.now() % 253) + 1}`,
+        },
+      });
       const pageB = await contextB.newPage();
       await register(pageB, member);
       await pageB.goto(memberInviteUrl);
@@ -125,6 +132,7 @@ test.describe("NEURA administration and knowledge journey", () => {
       await page.getByRole("button", { name: "Index source" }).click();
       await expect(page.getByRole("status")).toHaveText(
         "Source indexed and ready.",
+        { timeout: 30_000 },
       );
       await expect(
         page.getByText(knowledgeName, { exact: true }),

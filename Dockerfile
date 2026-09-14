@@ -16,7 +16,9 @@ ENV DATABASE_URL=postgresql://build:build@localhost:5432/build \
     NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} \
     NEXT_PUBLIC_APP_NAME=NEURA \
     EMAIL_PROVIDER=console
-RUN npm run build
+RUN npm run build \
+    && test -s .next/standalone/server.js \
+    && test -s .next/standalone/package.json
 
 FROM deps AS migrator
 WORKDIR /app
@@ -41,6 +43,7 @@ RUN addgroup --system --gid 1001 nodejs \
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 COPY --from=production-deps --chown=nextjs:nodejs /app/node_modules ./node_modules

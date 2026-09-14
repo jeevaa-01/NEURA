@@ -106,18 +106,32 @@ export class OpenAIProvider implements AIProvider {
 
     if (!response.ok) {
       let providerMessage = "The AI provider could not complete that request.";
+      let providerCode: string | undefined;
+      let providerType: string | undefined;
       try {
         const body = (await response.json()) as {
-          error?: { message?: string };
+          error?: { code?: string; type?: string; message?: string };
         };
+        providerCode = body.error?.code;
+        providerType = body.error?.type;
         if (response.status === 401)
           providerMessage = "The configured AI provider key was rejected.";
+        else if (
+          response.status === 429 &&
+          (providerCode === "insufficient_quota" ||
+            providerType === "insufficient_quota")
+        )
+          throw new AIError(
+            "AI_QUOTA_EXCEEDED",
+            "The OpenAI account has no available quota or billing access.",
+          );
         else if (response.status === 429)
           providerMessage =
             "The AI provider is rate limited. Try again shortly.";
         else if (body.error?.message && response.status < 500)
           providerMessage = "The AI provider rejected that request.";
-      } catch {
+      } catch (error) {
+        if (error instanceof AIError) throw error;
         // Keep provider internals out of the user-facing error.
       }
       throw new AIError(
